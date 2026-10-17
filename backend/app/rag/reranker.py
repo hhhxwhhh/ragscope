@@ -10,15 +10,18 @@ import logging
 import math
 import threading
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import anyio
-from sentence_transformers import CrossEncoder
 
 from app.core.config import get_settings
 
+if TYPE_CHECKING:
+    from sentence_transformers import CrossEncoder
+
 logger = logging.getLogger(__name__)
 
-_model: CrossEncoder | None = None
+_model: "CrossEncoder | None" = None
 _model_lock = threading.Lock()
 
 
@@ -29,11 +32,13 @@ class RerankResult:
     error: str | None = None
 
 
-def _get_model() -> CrossEncoder:
+def _get_model() -> "CrossEncoder":
     global _model
     if _model is None:
         with _model_lock:
             if _model is None:
+                from sentence_transformers import CrossEncoder
+
                 settings = get_settings()
                 logger.info("loading reranker model %s", settings.reranker_model)
                 _model = CrossEncoder(settings.reranker_model)
@@ -41,7 +46,7 @@ def _get_model() -> CrossEncoder:
     return _model
 
 
-def _predict(model: CrossEncoder, pairs: list[tuple[str, str]]) -> list[float]:
+def _predict(model: "CrossEncoder", pairs: list[tuple[str, str]]) -> list[float]:
     raw = model.predict(pairs, batch_size=16, show_progress_bar=False)
     return [1.0 / (1.0 + math.exp(-float(score))) for score in raw]
 

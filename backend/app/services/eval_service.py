@@ -9,12 +9,12 @@ import logging
 import math
 import time
 from dataclasses import asdict, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from statistics import mean
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import BadRequestError, ConflictError, NotFoundError
@@ -53,6 +53,7 @@ TERMINAL_STATUSES = {
     EvalRunStatus.FAILED,
     EvalRunStatus.CANCELLED,
 }
+STALE_RUN_MINUTES = 15
 
 
 # ---------------------------------------------------------------------------
@@ -567,6 +568,30 @@ async def cancel_run(db: AsyncSession, run: EvalRun) -> EvalRun:
         return run
     run.status = EvalRunStatus.CANCELLED
     return run
+
+
+async def recover_stale_runs(db: AsyncSession) -> int:
+    """Fail runs orphaned by a process restart.
+
+    BackgroundTasks live in the API process, so after a restart nothing will
+    ever finish a row left in pending/running. Runs younger than the cutoff are
+    left alone in case another worker is still executing them.
+    """
+    cutoff = datetime.now(UTC) - timedelta(minutes=STALE_RUN_MINUTES)
+    result = await db.execute(
+        update(EvalRun)
+        .where(
+            EvalRun.status.in_([EvalRunStatus.PENDING, EvalRunStatus.RUNNING]),
+            EvalRun.created_at < cutoff,
+        )
+        .values(
+            status=EvalRunStatus.FAILED,
+            error="评测进程中断，运行未完成；请重新发起",
+            finished_at=datetime.now(UTC),
+        )
+    )
+    await db.commit()
+    return int(result.rowcount or 0)
 
 
 async def list_runs(

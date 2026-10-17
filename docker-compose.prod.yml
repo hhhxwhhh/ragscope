@@ -1,0 +1,88 @@
+# Production-style stack: nginx + API + PostgreSQL + Redis.
+#
+#   cp .env.example .env   # fill DEEPSEEK_API_KEY and a random SECRET_KEY
+#   docker compose -f docker-compose.prod.yml up --build -d
+#   open http://localhost:${WEB_HOST_PORT:-8080}
+#
+# The dev compose file (docker-compose.yml) only starts db/redis for local
+# uvicorn + vite. This file runs everything in containers.
+
+name: ragscope-prod
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ragscope}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ragscope}
+      POSTGRES_DB: ${POSTGRES_DB:-ragscope}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ragscope} -d ${POSTGRES_DB:-ragscope}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  api:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      APP_ENV: prod
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      # Inside the container everything is served through nginx on :80.
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      CHROMA_DIR: /data/chroma
+      STORAGE_DIR: /data/storage
+      HF_HOME: /data/hf
+      # Demo corpus for `docker compose exec api python scripts/seed_demo.py`.
+      DEMO_DOCS_DIR: /app/data
+    volumes:
+      - chroma:/data/chroma
+      - storage:/data/storage
+      - hf_cache:/data/hf
+      - ./data:/app/data:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "8000"
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${WEB_HOST_PORT:-8080}:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  redisdata:
+  chroma:
+  storage:
+  hf_cache:

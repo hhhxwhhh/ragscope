@@ -17,6 +17,7 @@ from app.core.errors import AppError  # noqa: E402
 from app.core.logging import configure_logging  # noqa: E402
 from app.db.redis import close_redis  # noqa: E402
 from app.db.session import SessionLocal, engine  # noqa: E402
+from app.services.eval_service import recover_stale_runs  # noqa: E402
 from app.services.ingestion import recover_stale_documents  # noqa: E402
 
 settings = get_settings()
@@ -35,6 +36,15 @@ async def lifespan(app: FastAPI):
         except Exception:
             await db.rollback()
             logger.exception("failed to recover stale documents at startup")
+
+    async with SessionLocal() as db:
+        try:
+            recovered_runs = await recover_stale_runs(db)
+            if recovered_runs:
+                logger.warning("marked %s orphaned eval runs as failed", recovered_runs)
+        except Exception:
+            await db.rollback()
+            logger.exception("failed to recover stale eval runs at startup")
 
     yield
     await close_redis()
@@ -70,11 +80,37 @@ async def request_context(request: Request, call_next):
     request_id = request.headers.get("X-Request-ID", str(uuid4()))
     started = time.perf_counter()
 
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception(
+            "request failed method=%s path=%s request_id=%s",
+            request.method,
+            request.url.path,
+            request_id,
+        )
+        raise
 
     elapsed_ms = (time.perf_counter() - started) * 1000
     response.headers["X-Request-ID"] = request_id
     response.headers["X-Process-Time-Ms"] = f"{elapsed_ms:.1f}"
+
+    # Health checks run every few seconds in Compose; logging them adds noise.
+    health_paths = {
+        "/healthz",
+        "/readyz",
+        f"{settings.api_prefix}/healthz",
+        f"{settings.api_prefix}/readyz",
+    }
+    if request.url.path not in health_paths:
+        logger.info(
+            "%s %s status=%s duration_ms=%.1f request_id=%s",
+            request.method,
+            request.url.path,
+            response.status_code,
+            elapsed_ms,
+            request_id,
+        )
     return response
 
 

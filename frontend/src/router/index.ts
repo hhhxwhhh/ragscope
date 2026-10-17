@@ -56,9 +56,13 @@ const router = createRouter({
           name: 'eval-compare',
           component: () => import('@/views/EvalCompareView.vue'),
         },
+        {
+          path: ':pathMatch(.*)*',
+          name: 'not-found',
+          component: () => import('@/views/NotFoundView.vue'),
+        },
       ],
     },
-    { path: '/:pathMatch(.*)*', redirect: '/dashboard' },
   ],
 })
 

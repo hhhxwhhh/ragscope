@@ -48,7 +48,7 @@ async function handleLogout(): Promise<void> {
         </el-menu-item>
       </el-menu>
 
-      <div class="sidebar-foot muted">v0.3 · Week 3</div>
+      <div class="sidebar-foot muted">v0.4 · Week 4</div>
     </el-aside>
 
     <el-container>

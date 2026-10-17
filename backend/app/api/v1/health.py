@@ -1,5 +1,7 @@
+import logging
 from typing import Annotated
 
+import anyio
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy import text
@@ -7,6 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.db.session import get_db
+from app.rag import vector_store
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["health"])
 settings = get_settings()
@@ -44,6 +49,13 @@ async def readyz(
     finally:
         if client is not None:
             await client.aclose()
+
+    try:
+        await anyio.to_thread.run_sync(vector_store.ping)
+        checks["chroma"] = "ok"
+    except Exception as exc:  # pragma: no cover - depends on environment
+        logger.warning("chroma readiness check failed: %s", exc)
+        checks["chroma"] = f"error: {type(exc).__name__}"
 
     healthy = all(value == "ok" for value in checks.values())
     if not healthy:

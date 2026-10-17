@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
     refresh_cookie_name: str = "refresh_token"
+    login_max_attempts: int = 5
+    login_attempt_window_seconds: int = 600
 
     # PostgreSQL
     postgres_user: str = "ragscope"
@@ -39,6 +41,7 @@ class Settings(BaseSettings):
     # Redis
     redis_host: str = "localhost"
     redis_port: int = 6380
+    redis_db: int = 0
 
     # LLM
     deepseek_api_key: str = ""
@@ -85,7 +88,7 @@ class Settings(BaseSettings):
 
     @property
     def redis_url(self) -> str:
-        return f"redis://{self.redis_host}:{self.redis_port}/0"
+        return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
 
     @property
     def cors_origin_list(self) -> list[str]:

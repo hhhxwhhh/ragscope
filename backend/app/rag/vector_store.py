@@ -54,6 +54,11 @@ def _client() -> chromadb.PersistentClient:
     return chromadb.PersistentClient(path=str(path))
 
 
+def ping() -> bool:
+    """Cheap liveness check used by /readyz (does not load any models)."""
+    return _client().heartbeat() > 0
+
+
 def _get_or_create_collection(kb_id: UUID):
     return _client().get_or_create_collection(
         name=collection_name(kb_id),

@@ -8,26 +8,33 @@ is CPU/GPU bound and therefore always dispatched to a worker thread.
 import logging
 import threading
 from functools import partial
+from typing import TYPE_CHECKING
 
 import anyio
-from sentence_transformers import SentenceTransformer
 
 from app.core.config import get_settings
+
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger(__name__)
 
 # BGE's Chinese models are trained with an instruction prefix for queries.
 QUERY_INSTRUCTION = "为这个句子生成表示以用于检索相关文章："
 
-_model: SentenceTransformer | None = None
+_model: "SentenceTransformer | None" = None
 _model_lock = threading.Lock()
 
 
-def _get_model() -> SentenceTransformer:
+def _get_model() -> "SentenceTransformer":
     global _model
     if _model is None:
         with _model_lock:
             if _model is None:
+                # Imported lazily: torch + sentence-transformers is a ~2 GB
+                # dependency that CI and unit tests never need.
+                from sentence_transformers import SentenceTransformer
+
                 settings = get_settings()
                 kwargs = {}
                 if settings.embedding_device:

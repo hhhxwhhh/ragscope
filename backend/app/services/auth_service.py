@@ -2,9 +2,12 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import ConflictError, UnauthorizedError
+from app.core.config import get_settings
+from app.core.errors import ConflictError, RateLimitedError, UnauthorizedError
 from app.core.security import hash_password, verify_password
 from app.models.user import User
+
+settings = get_settings()
 
 
 async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
@@ -58,3 +61,47 @@ async def consume_refresh_token(redis: Redis, jti: str) -> str | None:
 
 async def revoke_refresh_token(redis: Redis, jti: str) -> None:
     await redis.delete(f"refresh:{jti}")
+
+
+# ---------------------------------------------------------------------------
+# Login throttling
+# ---------------------------------------------------------------------------
+
+LOGIN_FAIL_PREFIX = "login:fail"
+
+
+def _login_fail_keys(email: str, client_ip: str) -> tuple[str, str]:
+    normalized_email = email.strip().lower()
+    return (
+        f"{LOGIN_FAIL_PREFIX}:email:{normalized_email}",
+        f"{LOGIN_FAIL_PREFIX}:ip:{client_ip or 'unknown'}",
+    )
+
+
+async def ensure_login_allowed(redis: Redis, email: str, client_ip: str) -> None:
+    """Reject a login attempt once either the account or the IP is over budget.
+
+    A fixed window is enough here: failed attempts are cheap to count, and the
+    goal is to slow credential stuffing rather than enforce exact quotas.
+    """
+    for key in _login_fail_keys(email, client_ip):
+        raw = await redis.get(key)
+        if raw is not None and int(raw) >= settings.login_max_attempts:
+            minutes = max(settings.login_attempt_window_seconds // 60, 1)
+            raise RateLimitedError(f"登录失败次数过多，请 {minutes} 分钟后再试")
+
+
+async def record_login_failure(redis: Redis, email: str, client_ip: str) -> None:
+    window = settings.login_attempt_window_seconds
+    async with redis.pipeline(transaction=True) as pipe:
+        for key in _login_fail_keys(email, client_ip):
+            pipe.incr(key)
+            pipe.expire(key, window)
+        await pipe.execute()
+
+
+async def clear_login_failures(redis: Redis, email: str, client_ip: str) -> None:
+    email_key, _ = _login_fail_keys(email, client_ip)
+    # Do not clear the IP counter on success: a valid account must not reset
+    # the budget an attacker shares from the same address.
+    await redis.delete(email_key)

@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Cookie, Depends, Response, status
+from fastapi import APIRouter, Cookie, Depends, Request, Response, status
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,6 +48,14 @@ def _clear_refresh_cookie(response: Response) -> None:
     )
 
 
+def _client_ip(request: Request) -> str:
+    """Use the proxy-provided address when behind Nginx, else the socket peer."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else ""
+
+
 async def _issue_tokens(
     redis: Redis,
     user: User,
@@ -87,11 +95,19 @@ async def register(
 @router.post("/login", response_model=TokenResponse)
 async def login(
     payload: LoginRequest,
+    request: Request,
     response: Response,
     db: DbSession,
     redis: RedisClient,
 ) -> TokenResponse:
-    user = await auth_service.authenticate_user(db, payload.email, payload.password)
+    client_ip = _client_ip(request)
+    await auth_service.ensure_login_allowed(redis, payload.email, client_ip)
+    try:
+        user = await auth_service.authenticate_user(db, payload.email, payload.password)
+    except UnauthorizedError:
+        await auth_service.record_login_failure(redis, payload.email, client_ip)
+        raise
+    await auth_service.clear_login_failures(redis, payload.email, client_ip)
     return await _issue_tokens(redis, user, response)
 
 
