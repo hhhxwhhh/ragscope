@@ -14,6 +14,16 @@ venv/
 *.egg-info/
 .pytest_cache/
 
+# ===== Node / 前端 =====
+node_modules/
+frontend/dist/
+*.local
+
+# ===== 本地运行时数据 =====
+backend/data/
+.ruff_cache/
+.hypothesis/
+
 # ===== 模型 / 向量库等大文件（按需保留）=====
 # models/
 # chroma_db/
