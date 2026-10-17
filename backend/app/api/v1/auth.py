@@ -80,6 +80,7 @@ async def register(
         password=payload.password,
         display_name=payload.display_name,
     )
+    await db.commit()
     return await _issue_tokens(redis, user, response)
 
 

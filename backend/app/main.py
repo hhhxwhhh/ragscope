@@ -2,6 +2,7 @@ from app.core.env import configure_env
 
 configure_env()
 
+import logging  # noqa: E402
 import time  # noqa: E402
 from contextlib import asynccontextmanager  # noqa: E402
 from uuid import uuid4  # noqa: E402
@@ -15,14 +16,26 @@ from app.core.config import get_settings  # noqa: E402
 from app.core.errors import AppError  # noqa: E402
 from app.core.logging import configure_logging  # noqa: E402
 from app.db.redis import close_redis  # noqa: E402
-from app.db.session import engine  # noqa: E402
+from app.db.session import SessionLocal, engine  # noqa: E402
+from app.services.ingestion import recover_stale_documents  # noqa: E402
 
 settings = get_settings()
 configure_logging(settings.log_level)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Recover documents left in an in-progress state by a previous crash/reload.
+    async with SessionLocal() as db:
+        try:
+            recovered = await recover_stale_documents(db)
+            if recovered:
+                logger.warning("marked %s stale documents as failed", recovered)
+        except Exception:
+            await db.rollback()
+            logger.exception("failed to recover stale documents at startup")
+
     yield
     await close_redis()
     await engine.dispose()

@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173"
 
     # Auth
-    secret_key: str = "dev-only-secret-change-me"
+    secret_key: str = "dev-only-secret-change-me-use-32-bytes-or-more-in-prod"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
     refresh_cookie_name: str = "refresh_token"
@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     # Storage
     chroma_dir: str = str(BACKEND_DIR / "data" / "chroma")
     storage_dir: str = str(BACKEND_DIR / "data" / "storage")
+    max_upload_bytes: int = 5 * 1024 * 1024
 
     @property
     def database_url(self) -> str:
