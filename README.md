@@ -41,8 +41,9 @@
 .
 ├── data/               # 5 篇虚构的产品文档
 ├── learn.ipynb         # 主 notebook，目前到阶段 1
-├── ROADMAP.md          # 学习路线和后续计划
+├── requirements.txt
 ├── .env.example
+├── LICENSE
 └── .gitignore
 ```
 
@@ -51,7 +52,7 @@
 环境：Python 3.12，JupyterLab。有 GPU 会快一些，CPU 也能跑。
 
 ```bash
-pip install sentence-transformers openai python-dotenv jupyterlab
+pip install -r requirements.txt
 ```
 
 1. 复制 `.env.example` 为 `.env`，填入 DeepSeek API Key（在 https://platform.deepseek.com 申请）
@@ -62,6 +63,30 @@ jupyter lab
 ```
 
 3. 打开 `learn.ipynb`，从上往下运行
+
+## 换成自己的文档
+
+把 Markdown 文件放进 `data/`，重新运行 notebook 即可。如果是 PDF、docx，需要先转成纯文本。
+
+切块参数在 `split_text()` 里：
+
+```python
+def split_text(text, chunk_size=300, overlap=50):
+```
+
+中文文档可以先用 300 字左右、50 字重叠试起，再根据实际召回效果调整。问题越具体，块可以切得越小；需要跨段概括时，块就要大一些。
+
+## 已知的局限
+
+这一版只够用来理解流程，离实用还有距离：
+
+- 按固定字符数切块，会把句子从中间截断，也可能把同一主题拆到两块
+- 只用向量检索，遇到型号、编号这类关键词，效果可能不如 BM25
+- 没有 rerank，top-k 里经常混进不相关的块
+- 所有向量放在内存里，文档一多就要换向量库
+- 没有评测集，改参数只能靠肉眼判断好坏
+
+这些会在后面的阶段里逐个处理。
 
 ## 踩过的坑
 
@@ -78,7 +103,12 @@ os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
 ## 后面要做的
 
-见 [ROADMAP.md](ROADMAP.md)。大致顺序是：先拿现有流程做参数实验，再加向量库、混合检索和 rerank，最后搭一套小评测。
+1. 拿现有流程做参数实验：chunk_size、overlap、top_k，记录每次召回的结果
+2. 加向量库，文档多了以后不用把向量全放内存
+3. 加 BM25 混合检索和 rerank
+4. 建一个小评测集，比较不同配置的 recall@k
+
+都会接着写在 `learn.ipynb` 里。
 
 ## 参考
 
