@@ -1,0 +1,20 @@
+# ===== 密钥 / 本地配置（最重要）=====
+.env
+.env.*
+!.env.example
+
+# ===== Jupyter =====
+.ipynb_checkpoints/
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# ===== 模型 / 向量库等大文件（按需保留）=====
+# models/
+# chroma_db/
+*.log
