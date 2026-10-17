@@ -1,4 +1,4 @@
-"""Conversational query rewriting.
+"""Conversational query rewriting as a LangChain LCEL chain.
 
 Follow-up questions such as “那它续航多久？” are meaningless to a retriever on
 their own. When there is conversation history we ask the LLM for a standalone
@@ -9,8 +9,11 @@ import asyncio
 import logging
 from dataclasses import dataclass
 
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+
 from app.core.config import get_settings
-from app.rag.llm import get_llm_client
+from app.rag.llm import get_chat_model
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +24,16 @@ REWRITE_PROMPT = """你是检索查询改写器。根据对话历史，把用户
 2. 补全代词与省略的主语/对象，保留专有名词、型号和数字。
 3. 如果最后一句已经完整，原样输出。
 4. 不要回答这个问题。"""
+
+REWRITE_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages(
+    [
+        ("system", REWRITE_PROMPT),
+        (
+            "human",
+            "<对话历史>\n{history}\n</对话历史>\n\n用户最后一句：{question}",
+        ),
+    ]
+)
 
 
 @dataclass
@@ -47,25 +60,20 @@ async def rewrite_query(
         return RewriteResult(query=question, applied=False, error="no_api_key")
 
     try:
-        client = get_llm_client()
-        completion = await asyncio.wait_for(
-            client.chat.completions.create(
-                model=settings.deepseek_model,
-                messages=[
-                    {"role": "system", "content": REWRITE_PROMPT},
-                    {
-                        "role": "user",
-                        "content": f"<对话历史>\n{_history_block(history)}\n</对话历史>\n\n"
-                        f"用户最后一句：{question}",
-                    },
-                ],
-                temperature=0.0,
-                max_tokens=128,
+        chain = REWRITE_PROMPT_TEMPLATE | get_chat_model().bind(
+            temperature=0.0,
+            max_completion_tokens=128,
+        ) | StrOutputParser()
+        rewritten = await asyncio.wait_for(
+            chain.ainvoke(
+                {
+                    "history": _history_block(history),
+                    "question": question,
+                }
             ),
             timeout=settings.query_rewrite_timeout_seconds,
         )
-        rewritten = (completion.choices[0].message.content or "").strip()
-        rewritten = rewritten.strip("「」“”\"'").strip()
+        rewritten = (rewritten or "").strip().strip("「」“”\"'").strip()
         if not rewritten or len(rewritten) > 300:
             return RewriteResult(query=question, applied=False, error="invalid_rewrite")
         return RewriteResult(

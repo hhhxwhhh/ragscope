@@ -1,10 +1,10 @@
 # RAGScope
 
-用一套中文产品文档做知识库问答，同时能看清每次检索到底发生了什么，并用固定评测集判断改配置是不是真的有用。
+企业知识库问答平台：上传内部文档，多轮问答并给出可追溯的引用；同时能看清每次检索到底发生了什么，并用固定评测集判断改配置是不是真的有用。
 
 这是一个面向 Python 后端实习的作品集项目。上传、切块、向量/BM25 混合检索、流式回答是 RAG 的常规链路；真正想讲清楚的是后半部分：**检索可观测性 + 评测工作台**。每次回答都记录改写后的 query、四个检索阶段的候选和耗时；任意一次检索可以固化成评测用例；不同检索配置在同一个数据集上跑，对比 recall@k、MRR、拒答率和延迟。
 
-没有用 LangChain / LlamaIndex，检索和入库都是手写的。产品形态参考了 [RAGFlow](https://github.com/infiniflow/ragflow) 的检索测试台、[Dify](https://github.com/langgenius/dify) 的知识库设计，指标定义参考 [RAGAS](https://github.com/explodinggradients/ragas)，但没有引入 LLM-as-judge。
+检索与生成基于 **LangChain 1.x / LangGraph 1.x**：`ChatOpenAI` 接 DeepSeek，`HuggingFaceEmbeddings` + `Chroma` 适配现有索引，查询改写、多查询扩展和最终作答都是 LCEL 链，Agent 模式用 `create_agent` 编译 ReAct 状态图。BM25、RRF、cross-encoder 重排和检索 trace 仍由项目实现——这些正是需要精确拿到排名、分数和耗时的部分。产品形态参考了 [RAGFlow](https://github.com/infiniflow/ragflow) 的检索测试台、[Dify](https://github.com/langgenius/dify) 的知识库设计，指标定义参考 [RAGAS](https://github.com/explodinggradients/ragas)，但没有引入 LLM-as-judge。
 
 ## 现在能做什么
 
@@ -14,8 +14,8 @@
 - 混合检索：BGE 中文向量 + jieba/BM25，RRF 融合，`bge-reranker-base` 可选重排；每个知识库用 `index_version` 让 BM25 与向量缓存失效
 - 多查询扩展：可选用 LLM 生成 2–3 个改写问题一起召回，跨越不同表述提高召回；失败或超时会自动回退到单查询
 - Redis 检索缓存：按知识库、索引版本、完整检索配置、会话上下文和 query 做指纹，命中时跳过向量化、召回与重排；评测运行强制绕过缓存
-- 多轮问答：DeepSeek 流式输出（SSE over POST）、`[n]` 引用、来源抽屉、可中断、回答带检索 trace
-- Agentic RAG（可选模式）：单 Agent 在预算内自主调用 `search_knowledge_base` / `read_chunk_neighbors` / `get_document_outline`，把多跳、对比问题拆成多次检索；每一步的工具、参数、观测、耗时都通过 SSE 实时展示并落库，回答仍走原来的编号引用链路
+- 多轮问答：LangChain `ChatOpenAI` 接 DeepSeek，SSE 流式输出、`[n]` 引用、来源抽屉、可中断、回答带检索 trace
+- Agentic RAG（可选模式）：基于 LangGraph ReAct 图（`create_agent`），单 Agent 在预算内自主调用 `search_knowledge_base` / `read_chunk_neighbors` / `get_document_outline`，把多跳、对比问题拆成多次检索；每一步的工具、参数、观测、耗时都通过 SSE 实时展示并落库，回答仍走原来的编号引用链路
 - 引用质量：每次回答统计引用标记数、有效/无效标记、命中来源数与引用率，写入 `messages.citation_stats`
 - 反馈闭环：对回答点赞 / 点踩并填写原因；点踩可一键转成评测用例（自动带入被引用 chunk 作为标注），拒答回答转成不可答案例
 - 会话管理：按标题搜索、重命名、导出 Markdown
@@ -47,22 +47,25 @@
 
 ### Agentic RAG 模式
 
-聊天页右上角可以打开「Agent 检索」。它没有引入任何 Agent 框架，而是把上面的检索 pipeline 包成一个有边界的工具循环：
+聊天页右上角可以打开「Agent 检索」。它用 `langchain.agents.create_agent` 编译一张 LangGraph ReAct 状态图（model → tools 循环），模型在预算内自主决定是否继续检索：
 
 ```text
-问题 -> LLM 规划（tools + tool_choice=auto，不流式）
+问题 -> LangGraph ReAct 图（model 节点决定 tool_calls，tools 节点执行）
           ├─ search_knowledge_base(query, top_k)   # 复用 retrieve()，关闭多查询扩展
           ├─ read_chunk_neighbors(chunk_id, window) # 同一文档的相邻 chunk
           └─ get_document_outline(document_id)      # 标题结构 / chunk / 页码
-      -> 每步落库 + SSE agent_step 事件 -> 证据按 chunk_id 去重
-      -> 证据足够则停止 -> 原 grounding Prompt -> 流式回答 + [n] 引用
+      -> astream_events 转成 agent_step + 落库 -> 证据按 chunk_id 去重
+      -> 图停止 -> 原 grounding Prompt -> 流式回答 + [n] 引用
 ```
+
+三个工具是每次请求创建的闭包，捕获当前 `ToolContext`（DB session、KB、证据表）；LangGraph 可能并行执行同一轮的多个 tool call，而它们共享一个 `AsyncSession`，所以工具内部用 `asyncio.Lock` 串行化数据库访问。`recursion_limit` 按 `agent_max_steps` 推导，作为图级别的兜底。
 
 几个刻意的取舍：
 
-- **有界**：`agent_max_steps=5`、单轮决策 30s、单工具 60s（照顾 CPU 冷启动）、工具白名单和 Pydantic 参数校验；LLM 或工具失败时 fail-open，用已收集的证据继续回答，并把 `stopped_reason` 记为 `llm_error` / `max_steps` / `turn_timeout`。
-- **规划与作答分离**：循环只决定还要不要检索，不写最终答案；最终答案仍由原来的 grounded Prompt 基于去重后的证据流式生成，所以引用编号、`citation_stats`、检索 trace 与单轮模式完全一致。
-- **可观测而不是可幻觉**：落库的是工具名、参数、结构化观测（结果条数、chunk_id、预览、错误）和耗时，不保存模型思维链；前端可以展开每一步。
+- **有界**：`agent_max_steps=5`、单轮决策 30s、单工具 60s（照顾 CPU 冷启动）、工具白名单和 Pydantic 参数校验；LangGraph 的 `GraphRecursionError`、工具超时或模型失败都 fail-open，用已收集的证据继续回答，并把 `stopped_reason` 记为 `llm_error` / `max_steps` / `turn_timeout`。
+- **规划与作答分离**：图只决定还要不要检索，不写最终答案；最终答案仍由原来的 grounded Prompt 基于去重后的证据流式生成，所以引用编号、`citation_stats`、检索 trace 与单轮模式完全一致。
+- **可观测而不是可幻觉**：消费 `astream_events` 的 `on_tool_start/on_tool_end`，落库工具名、参数、结构化观测（结果条数、chunk_id、预览、错误）和耗时，不保存模型思维链；前端可以展开每一步。
+- **框架负责编排，状态留在本地**：LangGraph 管循环和工具调度，步骤记录、证据去重、预算和引用仍由项目代码掌握，换框架不会影响存储格式和前端事件协议。
 - **成本可见**：默认关闭，按浏览器记住开关；每次开启会多出若干次 LLM 决策调用，适合对比/多跳问题，简单事实问题单轮 RAG 更便宜。
 
 ## 评测结果
@@ -91,8 +94,9 @@
 |---|---|
 | 后端 | Python 3.12、FastAPI、Pydantic v2、SQLAlchemy 2.0 async + asyncpg |
 | 存储 | PostgreSQL 16、Redis 7、ChromaDB（PersistentClient 嵌入式） |
-| 检索 | sentence-transformers（`BAAI/bge-small-zh-v1.5`）、rank_bm25 + jieba、`BAAI/bge-reranker-base` |
-| 生成 | DeepSeek（openai SDK 兼容接口），SSE 流式 |
+| RAG 框架 | LangChain 1.x（LCEL、`ChatOpenAI`、`HuggingFaceEmbeddings`、`langchain-chroma`）、LangGraph 1.x（`create_agent` ReAct 图） |
+| 检索 | BGE 中文向量（`BAAI/bge-small-zh-v1.5`）、rank_bm25 + jieba、`BAAI/bge-reranker-base` |
+| 生成 | LangChain `ChatOpenAI` 对接 DeepSeek（OpenAI 兼容接口），SSE 流式 |
 | 前端 | Vue 3 + TypeScript + Vite、Element Plus、Pinia、ECharts、markdown-it + DOMPurify |
 | 测试 | pytest + pytest-asyncio、httpx ASGITransport、真实 PostgreSQL/Redis、fake retriever |
 | 基础设施 | 多阶段 Dockerfile、Docker Compose、Nginx（SSE 不缓冲）、Alembic、ruff、GitHub Actions |
@@ -106,9 +110,10 @@ rag_learn/
 │   │   ├── api/v1/          # auth, kbs, documents, chat, retrieval, eval, dashboard
 │   │   ├── core/            # 配置、鉴权、依赖、错误处理
 │   │   ├── models/          # SQLAlchemy 模型，含 evaluation
-│   │   ├── rag/             # parsers, chunker, embedder, chroma, bm25, fusion,
-│   │   │                    # reranker, multi_query, retrieval_cache, pipeline,
-│   │   │                    # agent/ (tools + bounded tool-calling loop)
+│   │   ├── rag/             # llm, embedder, vector_store, bm25, fusion,
+│   │   │                    # reranker, query_rewriter, multi_query, prompt,
+│   │   │                    # answer (LCEL), retrieval_cache, pipeline,
+│   │   │                    # agent/ (tools + LangGraph ReAct loop)
 │   │   ├── schemas/         # Pydantic 请求/响应
 │   │   ├── services/        # 入库、检索、会话、反馈、评测、看板
 │   │   └── workers/         # 文档入库后台任务
@@ -202,7 +207,7 @@ cd backend
 .venv/Scripts/python.exe -m pytest -q
 ```
 
-- 74 个测试，`tests/unit` 覆盖解析器（Markdown / DOCX / 空白 PDF）、页码映射、切块、RRF、指标计算、JWT、多查询解析、检索缓存 key、引用统计，以及 Agent 工具参数校验、证据去重、步数预算、非法参数与模型失败时的 fail-open；`tests/integration` 覆盖注册/登录/刷新轮换/登出、登录限流、知识库越权 404、评测数据集校验、后台执行器、运行对比、stale 运行恢复、反馈增删改与转评测用例、会话搜索/重命名/导出，以及未配置 LLM key 时 Agent 接口的 503。
+- 77 个测试，`tests/unit` 覆盖解析器（Markdown / DOCX / 空白 PDF）、页码映射、切块、RRF、指标计算、JWT、多查询解析、检索缓存 key、引用统计，以及用脚本化 fake model 跑真实 LangGraph 图验证 Agent 工具调用、参数校验、证据去重、步数预算、token 汇总与模型失败时的 fail-open；`tests/integration` 覆盖注册/登录/刷新轮换/登出、登录限流、知识库越权 404、评测数据集校验、后台执行器、运行对比、stale 运行恢复、反馈增删改与转评测用例、会话搜索/重命名/导出，以及未配置 LLM key 时 Agent 接口的 503。
 - 集成测试使用独立数据库 `ragscope_test` 和 Redis DB 1；session 开始时自动建库并跑迁移，每个测试前清空表和 Redis。
 - 评测执行器测试 mock 掉 `retrieve`，CI 只装 `.[dev]`，不需要下载 torch。
 - GitHub Actions 分两个 job：后端 ruff + pytest（PostgreSQL/Redis service），前端 typecheck + build。配置在 [.github/workflows/ci.yml](.github/workflows/ci.yml)。
@@ -211,10 +216,11 @@ cd backend
 
 - [docs/architecture.md](docs/architecture.md)：请求链路、数据模型、失败恢复、扩展路径
 - [docs/evaluation.md](docs/evaluation.md)：指标定义、拒答标定、实验方法、结果解读
-- [docs/interview-questions.md](docs/interview-questions.md)：14 个模块的面试题与参考要点
+- [docs/interview-questions.md](docs/interview-questions.md)：15 个模块的面试题与参考要点
 
 ## 几个实现取舍
 
+- **长期用 LangChain 标准件，可观测性不外包**：模型调用、embedding、向量库适配、Prompt 组合和 ReAct 图交给 LangChain/LangGraph，少写样板并保留换模型/换向量库的空间；BM25、RRF、重排和 trace 继续自研，因为要拿到每个阶段的原始排名、分数和耗时。入库写入时直接调用 Chroma 底层 `upsert` 传预计算向量，避免 `add_texts` 二次 embedding。
 - **Chroma 嵌入式而不是独立服务**：单机作品集没必要多一个容器，直接 `PersistentClient`，代价是扩展能力有限，文档里写清楚。
 - **BackgroundTasks 而不是 Celery**：当前只有一个后台任务类型，加消息队列会引入 Redis 队列、worker 进程和部署复杂度；评测运行需要可取消和进度，用数据库状态轮询就够了。
 - **BM25 由向量门槛控制**：BM25 分数没有绝对意义，语料外的短问题也会匹配到单个字。先看有没有向量候选过阈值，没有就直接拒答，不再交给 BM25 制造噪声。
@@ -231,7 +237,7 @@ cd backend
 - 限流用 Redis 计数并在每次失败时重置窗口；没有实现分布式滑动窗口或令牌桶
 - 没有团队、RBAC 和审计日志；Chroma 为嵌入式单机模式
 - 没有 Playwright E2E，前端只做类型检查和构建验证
-- Agent 是单 Agent、单轮预算内的工具循环，没有多 Agent 协作、长期记忆和自动反思；GraphRAG、多模态不在范围内
+- Agent 是单张 LangGraph ReAct 图、单轮预算内的工具循环，没有多 Agent 协作、长期记忆和自动反思；GraphRAG、多模态不在范围内
 
 ## 接下来
 

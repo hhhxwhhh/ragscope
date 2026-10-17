@@ -1,8 +1,14 @@
-"""Chroma vector store: one collection per knowledge base.
+"""Chroma vector store adapter built on ``langchain_chroma.Chroma``.
 
-Chroma's client is synchronous, so every public function here is called through
-``anyio.to_thread`` by the async layer. Chunk ids are the PostgreSQL chunk UUIDs,
-which makes delete/upsert idempotent and lets retrieval join back to PG.
+One collection per knowledge base, chunk ids are PostgreSQL chunk UUIDs, and
+the distance metric is cosine. Reads go through LangChain's public
+``similarity_search_by_vector_with_relevance_scores``; ingestion supplies
+pre-computed BGE vectors, so writes use the underlying collection's ``upsert``
+instead of ``add_texts`` (which would re-embed everything).
+
+Chroma's client is synchronous, so async callers wrap these functions in
+``anyio.to_thread``. Readiness deliberately uses a raw client so it never loads
+the embedding model.
 """
 
 import logging
@@ -13,6 +19,7 @@ from typing import Any
 from uuid import UUID
 
 import chromadb
+from langchain_chroma import Chroma
 
 from app.core.config import get_settings
 
@@ -56,29 +63,44 @@ def _client() -> chromadb.PersistentClient:
     return chromadb.PersistentClient(path=str(path))
 
 
+def _open_store(kb_id: UUID, *, create: bool) -> Chroma:
+    return Chroma(
+        collection_name=collection_name(kb_id),
+        # Vectors are always supplied by our embedding wrapper. Leaving this
+        # empty also keeps readiness/admin calls from loading BGE.
+        embedding_function=None,
+        persist_directory=str(Path(get_settings().chroma_dir)),
+        collection_metadata={"hnsw:space": "cosine"},
+        create_collection_if_not_exists=create,
+    )
+
+
+@lru_cache(maxsize=8)
+def _read_store(kb_id: UUID) -> Chroma:
+    return _open_store(kb_id, create=False)
+
+
+@lru_cache(maxsize=8)
+def _write_store(kb_id: UUID) -> Chroma:
+    return _open_store(kb_id, create=True)
+
+
+def _get_read_store(kb_id: UUID) -> Chroma | None:
+    try:
+        return _read_store(kb_id)
+    except Exception:  # collection does not exist / invalid name
+        return None
+
+
 def ping() -> bool:
     """Cheap liveness check used by /readyz (does not load any models)."""
     return _client().heartbeat() > 0
 
 
-def _get_or_create_collection(kb_id: UUID):
-    return _client().get_or_create_collection(
-        name=collection_name(kb_id),
-        metadata={"hnsw:space": "cosine"},
-    )
-
-
-def _get_collection(kb_id: UUID):
-    try:
-        return _client().get_collection(name=collection_name(kb_id))
-    except Exception:  # NotFoundError, invalid name, ...
-        return None
-
-
 def upsert_chunks(kb_id: UUID, index_version: int, chunks: list[ChunkVector]) -> int:
     if not chunks:
         return 0
-    collection = _get_or_create_collection(kb_id)
+    store = _write_store(kb_id)
     metadatas: list[dict[str, Any]] = []
     for chunk in chunks:
         metadata: dict[str, Any] = {
@@ -93,7 +115,10 @@ def upsert_chunks(kb_id: UUID, index_version: int, chunks: list[ChunkVector]) ->
             metadata["page_number"] = chunk.page_number
         metadatas.append(metadata)
 
-    collection.upsert(
+    # Public LangChain add_texts() would call the embedding function again.
+    # Ingestion already embedded outside the write transaction, so write the
+    # pre-computed vectors directly. upsert keeps retries idempotent.
+    store._collection.upsert(
         ids=[chunk.chunk_id for chunk in chunks],
         embeddings=[chunk.embedding for chunk in chunks],
         documents=[chunk.content for chunk in chunks],
@@ -109,51 +134,48 @@ def query(
     *,
     index_version: int | None = None,
 ) -> list[VectorHit]:
-    collection = _get_collection(kb_id)
-    if collection is None:
+    store = _get_read_store(kb_id)
+    if store is None:
         return []
 
     where: dict[str, Any] | None = None
     if index_version is not None:
         where = {"index_version": index_version}
 
-    result = collection.query(
-        query_embeddings=[embedding],
-        n_results=top_k,
-        where=where,
-        include=["documents", "metadatas", "distances"],
+    # LangChain returns relevance = 1 - cosine distance, the same score the
+    # hand-written client produced before the migration.
+    matches = store.similarity_search_by_vector_with_relevance_scores(
+        embedding,
+        k=top_k,
+        filter=where,
     )
 
-    ids = (result.get("ids") or [[]])[0]
-    documents = (result.get("documents") or [[]])[0]
-    metadatas = (result.get("metadatas") or [[]])[0]
-    distances = (result.get("distances") or [[]])[0]
-
     hits: list[VectorHit] = []
-    for chunk_id, document, metadata, distance in zip(
-        ids, documents, metadatas, distances, strict=False
-    ):
-        metadata = metadata or {}
-        # Collection uses cosine distance in [0, 2]; similarity is 1 - distance.
+    for document, score in matches:
+        metadata = document.metadata or {}
         hits.append(
             VectorHit(
-                chunk_id=str(chunk_id),
+                chunk_id=str(document.id or ""),
                 document_id=str(metadata.get("document_id", "")),
                 chunk_index=int(metadata.get("chunk_index", 0)),
                 filename=str(metadata.get("filename", "")),
                 heading_path=str(metadata.get("heading_path") or "") or None,
-                content=document or "",
-                score=1.0 - float(distance),
-                page_number=int(metadata["page_number"]) if metadata.get("page_number") else None,
+                content=document.page_content or "",
+                score=float(score),
+                page_number=(
+                    int(metadata["page_number"])
+                    if metadata.get("page_number") is not None
+                    else None
+                ),
             )
         )
     return hits
 
 
 def delete_document_chunks(kb_id: UUID, document_id: UUID) -> None:
-    collection = _get_collection(kb_id)
-    if collection is not None:
-        collection.delete(where={"document_id": str(document_id)})
+    store = _get_read_store(kb_id)
+    if store is not None:
+        store._collection.delete(where={"document_id": str(document_id)})
 
 
 def drop_kb_collection(kb_id: UUID) -> None:
@@ -161,8 +183,12 @@ def drop_kb_collection(kb_id: UUID) -> None:
         _client().delete_collection(name=collection_name(kb_id))
     except Exception:
         logger.debug("no Chroma collection to drop for kb %s", kb_id)
+    finally:
+        # Cached handles point at a collection that no longer exists.
+        _read_store.cache_clear()
+        _write_store.cache_clear()
 
 
 def count_chunks(kb_id: UUID) -> int:
-    collection = _get_collection(kb_id)
-    return int(collection.count()) if collection is not None else 0
+    store = _get_read_store(kb_id)
+    return int(store._collection.count()) if store is not None else 0

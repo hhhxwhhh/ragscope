@@ -1,4 +1,4 @@
-"""Multi-query expansion: one question, several retrieval angles.
+"""Multi-query expansion as a LangChain LCEL chain.
 
 A single embedding of "X1 和 X2 的续航和充电有什么区别" may favour one topic.
 The LLM rewrites it into complementary queries; each is retrieved separately and
@@ -11,8 +11,11 @@ import logging
 import re
 from dataclasses import dataclass, field
 
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+
 from app.core.config import get_settings
-from app.rag.llm import get_llm_client
+from app.rag.llm import get_chat_model
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +27,13 @@ MULTI_QUERY_PROMPT = """你是检索查询扩展器。把用户问题改写成 {
 2. 保持原问题中的专有名词、型号和数字不变。
 3. 覆盖不同的关键词表述或子问题，但不要引入新事实。
 4. 不要回答问题。"""
+
+MULTI_QUERY_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages(
+    [
+        ("system", MULTI_QUERY_PROMPT),
+        ("human", "{question}"),
+    ]
+)
 
 _BULLET_RE = re.compile(r"^\s*(?:[-*•]|\d+[.、)])\s*")
 _WS_RE = re.compile(r"\s+")
@@ -62,24 +72,15 @@ async def expand_queries(query: str, count: int, timeout_seconds: float) -> Mult
 
     count = min(max(count, 1), 5)
     try:
-        client = get_llm_client()
-        completion = await asyncio.wait_for(
-            client.chat.completions.create(
-                model=settings.deepseek_model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": MULTI_QUERY_PROMPT.format(count=count),
-                    },
-                    {"role": "user", "content": query},
-                ],
-                temperature=0.3,
-                max_tokens=256,
-            ),
+        chain = MULTI_QUERY_PROMPT_TEMPLATE | get_chat_model().bind(
+            temperature=0.3,
+            max_completion_tokens=256,
+        ) | StrOutputParser()
+        raw = await asyncio.wait_for(
+            chain.ainvoke({"count": count, "question": query}),
             timeout=timeout_seconds,
         )
-        raw = completion.choices[0].message.content or ""
-        queries = parse_queries(raw, query, count)
+        queries = parse_queries(raw or "", query, count)
         if not queries:
             return MultiQueryResult(error="invalid_expansion")
         return MultiQueryResult(queries=queries, applied=True)

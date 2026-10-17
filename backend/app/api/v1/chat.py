@@ -17,8 +17,8 @@ from app.db.session import SessionLocal, get_db
 from app.models.knowledge_base import KnowledgeBase
 from app.models.user import User
 from app.rag.agent.loop import AgentLoopResult, AgentStepRecord, stream_agent
-from app.rag.llm import get_llm_client
-from app.rag.prompt import build_llm_messages
+from app.rag.answer import stream_answer
+from app.rag.llm import get_chat_model
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services import agent_service, chat_service, kb_service
 
@@ -96,9 +96,9 @@ async def chat_stream(
     if payload.mode == "agent":
         if not get_settings().agent_enabled:
             raise ServiceUnavailableError("Agent 模式未启用")
-        # Resolve the client before persisting the user turn so a missing key
+        # Resolve the model before persisting the user turn so a missing key
         # fails the request without leaving a dangling message.
-        client = get_llm_client()
+        get_chat_model()
         turn = await agent_service.prepare_turn(
             kb_id,
             current_user.id,
@@ -106,7 +106,7 @@ async def chat_stream(
             payload.conversation_id,
         )
         return StreamingResponse(
-            _agent_event_stream(turn, client),
+            _agent_event_stream(turn),
             media_type="text/event-stream",
             headers=SSE_HEADERS,
         )
@@ -126,7 +126,6 @@ async def chat_stream(
 
 async def _agent_event_stream(
     turn: agent_service.AgentTurn,
-    client: Any,
 ) -> AsyncIterator[str]:
     """Stream a bounded agent run: planning steps, trace, then the grounded answer.
 
@@ -162,7 +161,6 @@ async def _agent_event_stream(
                 kb,
                 turn.question,
                 turn.history,
-                client,
                 turn.config,
                 settings,
             ):
@@ -216,27 +214,20 @@ async def _agent_event_stream(
         yield _sse("done", _done_payload(turn, bundle, latency_ms))
         return
 
-    messages = build_llm_messages(
-        turn.question,
-        result.evidence,
-        turn.history,
-        max_context_chars=settings.max_context_chars,
-    )
     parts: list[str] = []
     usage: dict[str, Any] = dict(result.token_usage or {})
     try:
-        stream = await client.chat.completions.create(
-            **chat_service.llm_stream_payload(messages)
-        )
-        async for chunk in stream:
-            if getattr(chunk, "usage", None) is not None:
+        async for chunk in stream_answer(
+            turn.question,
+            result.evidence,
+            turn.history,
+            max_context_chars=settings.max_context_chars,
+        ):
+            if chunk.usage is not None:
                 _merge_usage(usage, chunk.usage)
-            if not chunk.choices:
-                continue
-            delta = chunk.choices[0].delta.content
-            if delta:
-                parts.append(delta)
-                yield _sse("token", {"delta": delta})
+            if chunk.text:
+                parts.append(chunk.text)
+                yield _sse("token", {"delta": chunk.text})
     except asyncio.CancelledError:
         # Client stopped the run: keep the partial answer together with the steps
         # that were already executed.
@@ -308,7 +299,7 @@ async def _persist_agent(
             steps,
             stopped_reason=status,
             latency_ms=latency_ms,
-            usage=usage,
+            token_usage=usage,
         )
     )
     outcome = agent_service.to_outcome(turn.question, result) if result is not None else None
@@ -371,18 +362,17 @@ async def _event_stream(
     parts: list[str] = []
     usage: dict[str, Any] | None = None
     try:
-        stream = await preparation.client.chat.completions.create(
-            **chat_service.llm_stream_payload(preparation.llm_messages)
-        )
-        async for chunk in stream:
-            if getattr(chunk, "usage", None) is not None:
-                usage = chunk.usage.model_dump()
-            if not chunk.choices:
-                continue
-            delta = chunk.choices[0].delta.content
-            if delta:
-                parts.append(delta)
-                yield _sse("token", {"delta": delta})
+        async for chunk in stream_answer(
+            question,
+            outcome.candidates,
+            preparation.history,
+            max_context_chars=get_settings().max_context_chars,
+        ):
+            if chunk.usage is not None:
+                usage = chunk.usage
+            if chunk.text:
+                parts.append(chunk.text)
+                yield _sse("token", {"delta": chunk.text})
     except asyncio.CancelledError:
         # Client hit "stop" or disconnected: keep the partial answer.
         await asyncio.shield(

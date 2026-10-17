@@ -15,9 +15,9 @@ from app.models.conversation import Conversation
 from app.models.knowledge_base import KnowledgeBase
 from app.models.message import Message, MessageRole, MessageStatus
 from app.rag.agent.loop import AgentLoopResult, AgentStepRecord, stream_agent
-from app.rag.llm import get_llm_client
+from app.rag.answer import complete_answer
+from app.rag.llm import get_chat_model
 from app.rag.pipeline import RetrievalConfig, RetrievalOutcome
-from app.rag.prompt import build_llm_messages
 from app.services import chat_service
 from app.services.kb_service import get_owned_kb
 
@@ -141,7 +141,7 @@ async def answer_agent_once(
     """Non-streaming agent path used by the JSON endpoint and tests."""
     started = time.perf_counter()
     settings = get_settings()
-    client = get_llm_client()
+    get_chat_model()
 
     conversation = await chat_service.ensure_conversation(
         db, kb.id, user_id, conversation_id, question
@@ -163,7 +163,6 @@ async def answer_agent_once(
         kb,
         question,
         history,
-        client,
         RetrievalConfig.from_kb(kb),
         settings,
     ):
@@ -175,19 +174,14 @@ async def answer_agent_once(
 
     usage = dict(result.token_usage or {})
     if result.evidence:
-        completion = await client.chat.completions.create(
-            **chat_service.llm_payload(
-                build_llm_messages(
-                    question,
-                    result.evidence,
-                    history,
-                    max_context_chars=settings.max_context_chars,
-                ),
-                stream=False,
-            )
+        answer, answer_usage = await complete_answer(
+            question,
+            result.evidence,
+            history,
+            max_context_chars=settings.max_context_chars,
         )
-        answer = completion.choices[0].message.content or chat_service.REFUSAL_MESSAGE
-        _merge_usage(usage, completion.usage)
+        answer = answer or chat_service.REFUSAL_MESSAGE
+        _merge_usage(usage, answer_usage)
     else:
         answer = chat_service.REFUSAL_MESSAGE
 

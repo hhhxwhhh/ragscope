@@ -1,57 +1,57 @@
+"""Agent loop tests run a real LangGraph graph with a scripted chat model.
+
+``FakeMessagesListChatModel`` replays a fixed list of messages, so each test
+defines the exact tool calls the "model" makes. That exercises ``create_agent``,
+LangGraph's tool node and our ``astream_events`` translation without any network
+call, while keeping the assertions deterministic.
+"""
+
 import json
 from types import SimpleNamespace
+from typing import Any
 from uuid import uuid4
+
+from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+from langchain_core.messages import AIMessage
 
 from app.core.config import Settings
 from app.rag.agent import loop as loop_module
-from app.rag.agent.loop import parse_tool_arguments, stream_agent
-from app.rag.agent.tools import ToolContext, execute_tool, ordered_evidence
+from app.rag.agent import tools as tools_module
+from app.rag.agent.loop import _parse_observation, stream_agent
+from app.rag.agent.tools import (
+    BUDGET_ERROR,
+    StepBudget,
+    ToolContext,
+    execute_tool,
+    make_agent_tools,
+    ordered_evidence,
+)
 from app.rag.pipeline import RetrievalConfig
 
 
-def _settings(**overrides) -> Settings:
+class ToolCallingFakeModel(FakeMessagesListChatModel):
+    """Replays messages; ``create_agent`` always calls ``bind_tools`` first."""
+
+    def bind_tools(self, tools: Any, **kwargs: Any) -> "ToolCallingFakeModel":
+        return self
+
+
+class ExplodingModel(ToolCallingFakeModel):
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+        raise RuntimeError("upstream down")
+
+
+def _settings(**overrides: Any) -> Settings:
     return Settings(deepseek_api_key="test-key", **overrides)
 
 
-def _tool_call(call_id: str, name: str, arguments: dict | str) -> SimpleNamespace:
-    raw = arguments if isinstance(arguments, str) else json.dumps(arguments, ensure_ascii=False)
-    return SimpleNamespace(
-        id=call_id,
-        function=SimpleNamespace(name=name, arguments=raw),
-    )
-
-
-def _response(*calls: SimpleNamespace) -> SimpleNamespace:
-    return SimpleNamespace(
-        choices=[
-            SimpleNamespace(
-                message=SimpleNamespace(
-                    content=None,
-                    tool_calls=list(calls) or None,
-                )
-            )
+def _tool_call(name: str, arguments: dict[str, Any], call_id: str = "call-1") -> AIMessage:
+    return AIMessage(
+        content="",
+        tool_calls=[
+            {"name": name, "args": arguments, "id": call_id, "type": "tool_call"},
         ],
-        usage=None,
     )
-
-
-class FakeCompletions:
-    def __init__(self, responses: list[object]) -> None:
-        self.responses = list(responses)
-        self.calls: list[dict] = []
-
-    async def create(self, **kwargs):
-        self.calls.append(kwargs)
-        item = self.responses.pop(0)
-        if isinstance(item, Exception):
-            raise item
-        return item
-
-
-class FakeClient:
-    def __init__(self, responses: list[object]) -> None:
-        self.completions = FakeCompletions(responses)
-        self.chat = SimpleNamespace(completions=self.completions)
 
 
 def _ctx() -> ToolContext:
@@ -62,20 +62,73 @@ def _ctx() -> ToolContext:
     )
 
 
-def test_parse_tool_arguments_accepts_object_and_empty_input() -> None:
-    assert parse_tool_arguments('{"query": "X1 续航"}') == ({"query": "X1 续航"}, None)
-    assert parse_tool_arguments(None) == ({}, None)
-    assert parse_tool_arguments("   ") == ({}, None)
+def _candidate(**overrides: Any) -> dict[str, Any]:
+    candidate = {
+        "chunk_id": str(uuid4()),
+        "document_id": str(uuid4()),
+        "filename": "manual.md",
+        "chunk_index": 0,
+        "heading_path": "续航",
+        "page_number": None,
+        "content": "X1 的续航为 12 小时。",
+        "fused_score": 0.9,
+    }
+    candidate.update(overrides)
+    return candidate
 
 
-def test_parse_tool_arguments_rejects_malformed_or_non_object_json() -> None:
-    value, error = parse_tool_arguments("{not json")
-    assert value is None
-    assert error is not None
+def _fake_retrieve(candidates: list[dict[str, Any]], seen: list[dict[str, Any]] | None = None):
+    async def retrieve(db, kb, query, history, config):
+        if seen is not None:
+            seen.append({"query": query, "config": config})
+        return SimpleNamespace(
+            candidates=candidates,
+            rewritten_query=query,
+            trace={"cache_hit": False, "stage_timings": {"total_ms": 1.0}},
+        )
 
-    value, error = parse_tool_arguments('["query"]')
-    assert value is None
-    assert error == "arguments 必须是 JSON 对象"
+    return retrieve
+
+
+async def _run(monkeypatch, responses, settings: Settings, candidates=None):
+    monkeypatch.setattr(
+        loop_module,
+        "get_agent_model",
+        lambda: ToolCallingFakeModel(responses=responses),
+    )
+    if candidates is not None:
+        monkeypatch.setattr(tools_module, "retrieve", _fake_retrieve(candidates))
+    return [
+        event
+        async for event in stream_agent(
+            None,  # type: ignore[arg-type]
+            SimpleNamespace(id=uuid4()),  # type: ignore[arg-type]
+            "X1 的续航是多少？",
+            [],
+            RetrievalConfig(),
+            settings,
+        )
+    ]
+
+
+def test_step_budget_reserves_until_limit() -> None:
+    budget = StepBudget(limit=2)
+    assert budget.reserve() is True
+    assert budget.reserve() is True
+    assert budget.reserve() is False
+    assert budget.reserve() is False
+    assert budget.used == 2
+    assert budget.exhausted is True
+    assert budget.limit == 2
+
+
+def test_parse_observation_handles_json_strings_and_tool_errors() -> None:
+    assert _parse_observation('{"ok": true, "count": 1}') == {"ok": True, "count": 1}
+    assert _parse_observation("plain text") == {"raw": "plain text"}
+    assert _parse_observation(SimpleNamespace(content="{}", status="error")) == {
+        "ok": False,
+        "error": "{}",
+    }
 
 
 async def test_execute_tool_rejects_unknown_tool_and_invalid_arguments() -> None:
@@ -91,104 +144,104 @@ async def test_execute_tool_rejects_unknown_tool_and_invalid_arguments() -> None
 
 
 async def test_loop_runs_tool_then_finishes(monkeypatch) -> None:
-    ctx_seen: list[ToolContext] = []
+    seen: list[dict[str, Any]] = []
+    candidates = [_candidate()]
+    monkeypatch.setattr(tools_module, "retrieve", _fake_retrieve(candidates, seen))
 
-    async def fake_execute(name: str, arguments: dict, ctx: ToolContext) -> dict:
-        ctx_seen.append(ctx)
-        assert name == "search_knowledge_base"
-        ctx.merge_evidence(
-            {
-                "chunk_id": str(uuid4()),
-                "document_id": str(uuid4()),
-                "filename": "manual.md",
-                "chunk_index": 0,
-                "content": "X1 的续航为 12 小时。",
-                "fused_score": 0.9,
-            },
-            rank=1,
-            source="search",
-        )
-        return {"ok": True, "count": 1, "results": []}
-
-    monkeypatch.setattr(loop_module, "execute_tool", fake_execute)
-    client = FakeClient(
-        [
-            _response(_tool_call("call-1", "search_knowledge_base", {"query": "X1 续航"})),
-            _response(),
-        ]
+    events = await _run(
+        monkeypatch,
+        [_tool_call("search_knowledge_base", {"query": "X1 续航"}), AIMessage(content="done")],
+        _settings(agent_max_steps=3),
     )
 
-    events = [
-        event
-        async for event in stream_agent(
-            None,  # type: ignore[arg-type]
-            SimpleNamespace(id=uuid4()),  # type: ignore[arg-type]
-            "X1 的续航是多少？",
-            [],
-            client,  # type: ignore[arg-type]
-            RetrievalConfig(),
-            _settings(agent_max_steps=3),
-        )
-    ]
-
     assert [event.type for event in events] == ["step", "result"]
-    assert events[0].step is not None
-    assert events[0].step.status == "ok"
-    result = events[1].result
+    step = events[0].step
+    assert step is not None
+    assert step.tool_name == "search_knowledge_base"
+    assert step.arguments == {"query": "X1 续航"}
+    assert step.status == "ok"
+    assert step.observation["ok"] is True
+    assert step.observation["count"] == 1
+
+    # The agent plans its own queries, so the tool must not fan out into
+    # multi-query expansions (that would multiply LLM calls per tool use).
+    assert seen and seen[0]["config"].use_multi_query is False
+
+    result = events[-1].result
     assert result is not None
     assert result.stopped_reason == "model_finished"
     assert result.tool_calls == 1
-    assert len(result.evidence) == 1
-    assert ctx_seen
-    # A tool-result message with the matching id must be appended after each call.
-    assert client.completions.calls[1]["messages"][-1]["role"] == "tool"
-    assert client.completions.calls[1]["messages"][-1]["tool_call_id"] == "call-1"
+    assert result.turns == 2  # tool-call turn + final turn
+    assert [item["chunk_id"] for item in result.evidence] == [candidates[0]["chunk_id"]]
+    assert result.searches[0]["result_count"] == 1
 
 
 async def test_loop_stops_at_step_budget(monkeypatch) -> None:
-    async def fake_execute(name: str, arguments: dict, ctx: ToolContext) -> dict:
-        return {"ok": True}
-
-    monkeypatch.setattr(loop_module, "execute_tool", fake_execute)
-    client = FakeClient(
+    events = await _run(
+        monkeypatch,
         [
-            _response(_tool_call("call-1", "search_knowledge_base", {"query": "一"})),
-            _response(_tool_call("call-2", "search_knowledge_base", {"query": "二"})),
-            _response(_tool_call("call-3", "search_knowledge_base", {"query": "三"})),
-        ]
+            _tool_call("search_knowledge_base", {"query": "一"}, "call-1"),
+            _tool_call("search_knowledge_base", {"query": "二"}, "call-2"),
+            _tool_call("search_knowledge_base", {"query": "三"}, "call-3"),
+        ],
+        _settings(agent_max_steps=2),
+        candidates=[_candidate()],
     )
-
-    events = [
-        event
-        async for event in stream_agent(
-            None,  # type: ignore[arg-type]
-            SimpleNamespace(id=uuid4()),  # type: ignore[arg-type]
-            "多跳问题",
-            [],
-            client,  # type: ignore[arg-type]
-            RetrievalConfig(),
-            _settings(agent_max_steps=2),
-        )
-    ]
 
     result = events[-1].result
     assert result is not None
     assert result.stopped_reason == "max_steps"
     assert result.tool_calls == 2
-    assert result.turns == 2
-    assert len(client.completions.calls) == 2
+    # Rejected over-budget calls are shown to the model but not persisted as
+    # user-visible steps.
+    assert all(step.observation.get("error") != BUDGET_ERROR for step in result.steps)
+    assert len(result.steps) == 2
 
 
-async def test_loop_records_invalid_json_as_failed_step(monkeypatch) -> None:
-    async def fake_execute(name: str, arguments: dict, ctx: ToolContext) -> dict:
-        return {"ok": True}
-
-    monkeypatch.setattr(loop_module, "execute_tool", fake_execute)
-    client = FakeClient(
+async def test_loop_records_tool_error_as_failed_step(monkeypatch) -> None:
+    events = await _run(
+        monkeypatch,
         [
-            _response(_tool_call("call-1", "search_knowledge_base", "{broken")),
-            _response(),
-        ]
+            _tool_call("read_chunk_neighbors", {"chunk_id": "not-a-uuid"}),
+            AIMessage(content="done"),
+        ],
+        _settings(),
+    )
+
+    step = events[0].step
+    assert step is not None
+    assert step.status == "error"
+    assert step.observation == {"ok": False, "error": "chunk_id 不是合法的 UUID"}
+    result = events[-1].result
+    assert result is not None
+    assert result.stopped_reason == "model_finished"
+
+
+async def test_loop_records_schema_validation_failure(monkeypatch) -> None:
+    # LangChain's tool node validates args before our wrapper runs and emits
+    # on_tool_error; the loop still records a failed, persisted step.
+    events = await _run(
+        monkeypatch,
+        [
+            _tool_call("read_chunk_neighbors", {"chunk_id": "x", "window": 9}),
+            AIMessage(content="done"),
+        ],
+        _settings(),
+    )
+
+    step = events[0].step
+    assert step is not None
+    assert step.status == "error"
+    assert step.arguments == {"chunk_id": "x", "window": 9}
+    assert step.observation["ok"] is False
+    assert "validation error" in step.observation["error"]
+
+
+async def test_loop_fails_open_when_llm_errors(monkeypatch) -> None:
+    monkeypatch.setattr(
+        loop_module,
+        "get_agent_model",
+        lambda: ExplodingModel(responses=[]),
     )
 
     events = [
@@ -198,32 +251,6 @@ async def test_loop_records_invalid_json_as_failed_step(monkeypatch) -> None:
             SimpleNamespace(id=uuid4()),  # type: ignore[arg-type]
             "问题",
             [],
-            client,  # type: ignore[arg-type]
-            RetrievalConfig(),
-            _settings(),
-        )
-    ]
-
-    step = events[0].step
-    assert step is not None
-    assert step.status == "error"
-    assert step.arguments == {}
-    assert step.observation["ok"] is False
-    assert events[-1].result is not None
-    assert events[-1].result.stopped_reason == "model_finished"
-
-
-async def test_loop_fails_open_when_llm_errors() -> None:
-    client = FakeClient([RuntimeError("upstream down")])
-
-    events = [
-        event
-        async for event in stream_agent(
-            None,  # type: ignore[arg-type]
-            SimpleNamespace(id=uuid4()),  # type: ignore[arg-type]
-            "问题",
-            [],
-            client,  # type: ignore[arg-type]
             RetrievalConfig(),
             _settings(),
         )
@@ -234,6 +261,51 @@ async def test_loop_fails_open_when_llm_errors() -> None:
     assert result.stopped_reason == "llm_error"
     assert result.steps == []
     assert result.error is not None
+
+
+async def test_loop_sums_usage_across_turns(monkeypatch) -> None:
+    tool_turn = _tool_call("search_knowledge_base", {"query": "X1"})
+    tool_turn.usage_metadata = {"input_tokens": 10, "output_tokens": 2, "total_tokens": 12}
+    final_turn = AIMessage(content="done")
+    final_turn.usage_metadata = {"input_tokens": 20, "output_tokens": 3, "total_tokens": 23}
+
+    events = await _run(
+        monkeypatch,
+        [tool_turn, final_turn],
+        _settings(),
+        candidates=[_candidate()],
+    )
+
+    result = events[-1].result
+    assert result is not None
+    assert result.token_usage == {
+        "input_tokens": 30,
+        "output_tokens": 5,
+        "total_tokens": 35,
+    }
+
+
+async def test_tool_factory_exposes_whitelisted_schemas_and_enforces_budget(monkeypatch) -> None:
+    seen: list[dict[str, Any]] = []
+    monkeypatch.setattr(tools_module, "retrieve", _fake_retrieve([_candidate()], seen))
+    ctx = _ctx()
+    budget = StepBudget(limit=1)
+    tools = make_agent_tools(ctx, _settings(), budget)
+    assert [tool.name for tool in tools] == [
+        "search_knowledge_base",
+        "read_chunk_neighbors",
+        "get_document_outline",
+    ]
+
+    search = tools[0]
+    first = json.loads(await search.ainvoke({"query": "X1 续航"}))
+    assert first["ok"] is True
+    assert first["count"] == 1
+    assert budget.used == 1
+
+    second = json.loads(await search.ainvoke({"query": "再来一次"}))
+    assert second == {"ok": False, "error": BUDGET_ERROR}
+    assert len(seen) == 1  # the rejected call never reaches retrieval
 
 
 def test_merge_evidence_deduplicates_and_orders_by_best_rank() -> None:

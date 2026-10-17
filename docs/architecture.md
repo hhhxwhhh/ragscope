@@ -13,11 +13,14 @@ Nginx (生产) ── /api/ ──> FastAPI (uvicorn)
                               ├── Redis 7        (refresh token、登录限流、检索结果缓存)
                               ├── Chroma         (每 KB 一个 collection)
                               └── 本地进程内任务   (文档入库、评测运行)
-                                   ├── BGE embedding
-                                   ├── BM25 + jieba
-                                   ├── bge-reranker
-                                   └── DeepSeek API (流式生成)
+                                   ├── BGE embedding        (langchain-huggingface)
+                                   ├── Chroma               (langchain-chroma)
+                                   ├── BM25 + jieba         (自研 BaseRetriever)
+                                   ├── bge-reranker         (自研 CrossEncoder)
+                                   └── DeepSeek API         (LangChain ChatOpenAI，流式)
 ```
+
+RAG 层分两类组件：LangChain 提供 `ChatOpenAI`、`HuggingFaceEmbeddings`、`Chroma` 适配器和 LCEL 链，LangGraph 提供 ReAct 图；BM25、RRF、重排和 trace 由项目自己实现，因为这些地方需要原始的排名、分数和耗时，不能只拿最终答案。Agent 的编排在 `app/rag/agent/loop.py`，工具的权限边界和观测格式在 `agent/tools.py`。
 
 后端只有一层进程：API、后台任务、模型推理都在同一个容器里。这是作品集项目的刻意选择，不是没来得及拆。代价和扩展路径写在最后一节。
 
@@ -27,7 +30,7 @@ Nginx (生产) ── /api/ ──> FastAPI (uvicorn)
 |---|---|---|
 | `app/api/v1` | HTTP 参数、状态码、依赖注入 | 不写业务规则 |
 | `app/services` | 事务边界、业务规则、ownership 校验 | 不碰请求对象 |
-| `app/rag` | 切块、embedding、BM25、融合、重排、Prompt | 不直接写数据库 |
+| `app/rag` | 切块、embedding、BM25、融合、重排、Prompt、LCEL 链与 LangGraph 图 | 不直接写数据库 |
 | `app/models` | SQLAlchemy 表结构 | 不含查询逻辑 |
 | `app/schemas` | Pydantic 输入输出与校验 | 不引用 ORM 对象做副作用 |
 | `frontend/src/api` | axios 封装、401 单飞刷新、SSE 解析 | 不含页面状态 |
@@ -79,7 +82,7 @@ POST /kbs/{id}/chat/stream
                   断连标记 cancelled 并保留部分内容
 ```
 
-SSE 用 POST + `fetch` 而不是 `EventSource`，因为需要请求体和 `Authorization` 头。前端自定义按 `\n\n` 分帧，并用 `TextDecoder({stream: true})` 处理跨 chunk 的中文多字节字符。
+回答由 LCEL 链生成：`ANSWER_PROMPT | ChatOpenAI`，`astream()` 逐块返回文本和最终的 `usage_metadata`。查询改写和多查询扩展也是同构的短链，各自 `bind(temperature=..., max_completion_tokens=...)`，避免在 Prompt 里放采样参数。SSE 用 POST + `fetch` 而不是 `EventSource`，因为需要请求体和 `Authorization` 头。前端自定义按 `\n\n` 分帧，并用 `TextDecoder({stream: true})` 处理跨 chunk 的中文多字节字符。
 
 检索缓存 key 是 `kb_id + index_version + asdict(RetrievalConfig) + 改写后 query + 历史消息哈希` 的 sha256。历史消息参与指纹，是因为指代消解已经发生在改写阶段：同一个追问在不同上下文中含义不同。缓存 TTL 默认 300 秒，读写失败都按 miss 处理（fail-open），不影响主链路；评测运行强制 `use_cache=False`，保证跑的是真实检索。
 
@@ -90,21 +93,25 @@ SSE 用 POST + `fetch` 而不是 `EventSource`，因为需要请求体和 `Autho
 ```text
 POST /kbs/{id}/chat/stream  { mode: "agent" }
   ├─ 落用户消息（短 session，立即提交）
-  ├─ 规划循环（同一短 session，最多 agent_max_steps 次工具）
-  │   ├─ LLM: tools + tool_choice=auto（非流式，单轮 30s 超时）
-  │   ├─ search_knowledge_base -> 复用 retrieve()，强制关闭 multi-query
-  │   ├─ read_chunk_neighbors -> 同文档相邻 chunk（按 kb_id 校验归属）
-  │   ├─ get_document_outline -> 标题分段、chunk 序号、页码
-  │   ├─ Pydantic 校验参数；未知工具/非法 JSON/工具异常都变成结构化 observation
-  │   └─ 每次执行: agent_steps 落库 + SSE agent_step（工具、参数、观测、耗时）
+  ├─ LangGraph ReAct 图（同一短 session，最多 agent_max_steps 次工具）
+  │   ├─ create_agent(model, tools, system_prompt) 编译状态图
+  │   ├─ model 节点: 决定 tool_calls（工具 schema 由 LangChain 生成）
+  │   ├─ tools 节点: 并行调度同一轮的多个调用，闭包执行下列工具
+  │   │   ├─ search_knowledge_base -> 复用 retrieve()，强制关闭 multi-query
+  │   │   ├─ read_chunk_neighbors -> 同文档相邻 chunk（按 kb_id 校验归属）
+  │   │   └─ get_document_outline -> 标题分段、chunk 序号、页码
+  │   ├─ Pydantic 校验参数；未知工具/非法参数/工具异常都变成结构化 observation
+  │   └─ astream_events: on_tool_start/on_tool_end -> agent_step 落库 + SSE
   ├─ 证据按 chunk_id 去重，按 (最好排名, 首次出现) 排序，最多 10 条
   ├─ 关闭 session -> 发 retrieval trace -> 原 grounded Prompt 流式回答
   └─ 落 assistant 消息 + citations + agent_run（stopped_reason 等）
 ```
 
-规划循环和最终作答是两段：循环只决定"还要不要检索"，不产出用户可见答案。这样最终回答仍然经过原来的编号引用 Prompt，`[n]`、`citation_stats`、引用抽屉和 trace 与单轮模式一致，也能避免让规划模型自由发挥导致引用编号错位。
+图由 `langchain.agents.create_agent`（LangChain 1.x 的 LangGraph 实现）构建，不再手写 `while` 循环。项目保留的控制点是：每次请求创建工具闭包并注入 `ToolContext`；在工具内部用 `asyncio.Lock` 串行化共享 `AsyncSession` 的访问；通过 `astream_events(version="v2")` 把 `on_tool_start/on_tool_end/on_tool_error` 翻译成既有的 `AgentStepRecord`；根据预算推导 `recursion_limit`，作为图级别死循环兜底。
 
-边界都在服务端：步数预算、单轮决策超时、单工具超时、工具白名单、参数校验、每 KB 的 ownership 过滤。任何一次 LLM 调用或工具失败都不直接抛给用户，而是 fail-open：带着已收集的证据继续作答，把原因写进 `agent_runs.stopped_reason`（`max_steps` / `turn_timeout` / `llm_error`）。前端右上角开关按浏览器记住，默认关闭。
+规划图和最终作答是两段：图只决定"还要不要检索"，不产出用户可见答案。这样最终回答仍然经过原来的编号引用 Prompt，`[n]`、`citation_stats`、引用抽屉和 trace 与单轮模式一致，也能避免让规划模型自由发挥导致引用编号错位。
+
+边界都在服务端：步数预算、单轮决策超时、单工具超时、工具白名单、参数校验、每 KB 的 ownership 过滤。任何一次 LLM 调用或工具失败都不直接抛给用户，而是 fail-open：带着已收集的证据继续作答，把原因写进 `agent_runs.stopped_reason`（`max_steps` / `turn_timeout` / `llm_error`）。`GraphRecursionError` 同样归入 `max_steps`，防止模型反复请求同一个工具把请求拖死。前端右上角开关按浏览器记住，默认关闭。
 
 落库的是结构化步骤，而不是思维链：工具名、经过校验的参数、观测摘要、状态、耗时。这既够前端还原"它查了什么、为什么查不到"，又不会把模型的内部推理写进数据库。
 
@@ -177,6 +184,14 @@ JSONB 只用于配置、候选、指标、标注这类"整体读写"的数据，
 
 扩展路径：任务写 `jobs` 表 -> Celery/RQ worker 消费 -> 任务状态仍存 PostgreSQL。现有状态机和轮询接口不需要改。
 
+### 用 LangChain，但不把可观测性交给它
+
+- **用框架的部分**：`ChatOpenAI` 统一模型接口，换供应商只改 `app/rag/llm.py`；`HuggingFaceEmbeddings` 管 BGE 推理与批处理；`langchain-chroma.Chroma` 提供读写和余弦相关性分数；LCEL 把 Prompt、模型和输出解析器组合成可复用的短链；`create_agent` + `astream_events` 负责 Agent 的循环与事件流。
+- **不交给框架的部分**：BM25 检索器（自研 `BaseRetriever`，保留绝对分数）、RRF 融合、cross-encoder 重排、`retrieval_traces` 和 `agent_steps`。这些是项目的差异化，需要拿到每个阶段完整的候选、排名、分数和耗时；如果只调用框架的 `Retriever.invoke()`，这些细节会被抽象掉。
+- **写入路径绕过高层 API**：入库时已经算好向量，`add_texts()` 会再次调用 embedding，所以直接使用 `Chroma._collection.upsert(ids, embeddings, documents, metadatas)`。读取路径仍走公开的 `similarity_search_by_vector_with_relevance_scores`，返回的 relevance 等于 `1 - cosine_distance`，与迁移前的分数尺度一致。
+- **模型惰性构造**：`HuggingFaceEmbeddings` 在构造函数里就会加载 SentenceTransformer，因此 `_get_embeddings()` 延迟到第一次真正 embedding 时才创建，并用锁保护；`/readyz` 和后台任务不会因为导入模块就吃掉几百 MB 内存。
+- **版本边界**：LangChain 1.x 的包拆分较细，`langchain-huggingface` 默认不安装 `sentence-transformers`，所以 torch 仍放在 `[rag]` extra 里，CI 只装 `[dev]`。
+
 ### 嵌入式 Chroma
 
 每个知识库一个 collection，chunk id 直接用 PostgreSQL UUID，删除和 upsert 天然幂等。Chroma 是同步库，所有调用都包在 `anyio.to_thread` 里，避免阻塞事件循环。单机够用；要多副本时换成独立向量服务，并在 metadata 中保留 `document_id/chunk_index` 的映射。
@@ -212,7 +227,7 @@ embedding 在写事务外完成；SSE 流式期间不持有 session；评测执�
 | 多查询扩展失败/超时 | 回退单查询，trace 记录 `multi_query_error` | 不失败；可关闭该配置 |
 | Agent 工具超时/异常 | 该步记为 error，继续下一步或直接作答 | fail-open；`stopped_reason` 记录原因 |
 | Agent LLM 决策失败 | 带着已收集证据生成回答 | fail-open；`stopped_reason=llm_error` |
-| Agent 达到步数预算 | 停止规划，用现有证据作答 | `stopped_reason=max_steps`，可调大预算 |
+| Agent 达到步数预算 / 图递归上限 | 停止规划，用现有证据作答 | `stopped_reason=max_steps`，可调大预算 |
 | 检索缓存读写失败 | 按未命中处理，继续走真实检索 | 不失败；Redis 恢复后自动重新使用 |
 | Redis 不可用（鉴权） | 登录/刷新失败 | 恢复 Redis；鉴权不降级放行 |
 | Chroma 不可用 | readyz 503，检索报错 | 恢复后重试；/readyz 可被编排系统使用 |

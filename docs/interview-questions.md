@@ -1,6 +1,6 @@
 # 面试题与参考要点
 
-按 RAGScope 的 12 个核心模块整理，v0.5 新增的解析、页码、多查询、缓存和反馈闭环放在第 13 节。每题先给结论，再给能落到代码和数字上的细节。面试时不要背全文，挑 2~3 个点讲清楚即可。
+按 RAGScope 的 15 个核心模块整理：v0.5 新增的解析、页码、多查询、缓存和反馈闭环放在第 13 节，Agent 在第 14 节，LangChain / LCEL / LangGraph 的集成细节在第 15 节。每题先给结论，再给能落到代码和数字上的细节。面试时不要背全文，挑 2~3 个点讲清楚即可。
 
 ---
 
@@ -265,7 +265,7 @@
 **Q2：为什么把 sentence-transformers 做成可选依赖？**
 
 - torch + transformers 安装体积大、CI 慢，而单元测试和大部分集成测试不需要真实推理。
-- `import` 延迟到 `_get_model()`，`pyproject.toml` 里放到 `[rag]` extra；生产镜像装 `.[rag]`，CI 装 `.[dev]`。
+- `langchain-huggingface` 默认不会安装 `sentence-transformers`，所以把它放在 `[rag]` extra；`HuggingFaceEmbeddings` 延迟到 `_get_embeddings()` 才构造，生产镜像装 `.[rag]`，CI 装 `.[dev]`。
 - 代价是如果部署忘装 extra，错误会推迟到第一次检索；Dockerfile 明确安装 `.[rag]`，并在 readiness 中暴露 Chroma/PG/Redis 状态。
 
 **Q3：Nginx 部署 SSE 需要注意什么？**
@@ -313,41 +313,88 @@
 
 ## 14. Agentic RAG（可选模式）
 
-**Q1：为什么不用 LangChain / LangGraph，而是手写一个单 Agent 循环？**
+**Q1：为什么用 LangChain / LangGraph，而不是继续手写工具循环？**
 
-- 这里只需要一件事：让模型在预算内决定"还要不要检索、检索什么"。`chat.completions.create(tools=..., tool_choice="auto")` 加一个 `while` 循环就够了，引入框架会增加抽象层、版本耦合和排查难度，面试时也很难讲清每一步。
-- 单 Agent 的边界更可控：工具白名单只有 3 个、步数上限 5、参数 Pydantic 校验、每个工具都绑定当前 `kb_id` 做 ownership 过滤。多 Agent 协作会引入角色分工、消息传递和额外 token 成本，但对"知识库问答"没有明显收益。
-- 成本上，Agent 模式默认关闭；简单事实问题单轮 RAG 更便宜，多跳/对比问题才值得多花几次决策调用。这个取舍由前端开关和文档说明，而不是默认替用户做决定。
+- 最开始确实是手写的：`chat.completions.create(tools=..., tool_choice="auto")` + `while` 循环。它能跑，但工具 schema 序列化、消息拼接、并行 tool call、递归上限、超时和事件流都要自己维护，代码里一半是在重写框架已经解决的东西。
+- 迁移后 `create_agent` 编译一张 LangGraph 状态图，模型节点与工具节点由框架调度；`astream_events(version="v2")` 直接给出 `on_tool_start/on_tool_end/on_tool_error`，我们只负责翻译成既有的 `AgentStepRecord`。存储格式、SSE 协议、前端时间线都不用改。
+- 但边界保留在项目里：步数预算、单工具超时、`AsyncSession` 串行化、证据去重、`recursion_limit`、fail-open 和 `stopped_reason` 都是自己的代码。框架负责编排，可观测性和业务约束不外包。
+- 代价是版本耦合和抽象层变厚；所以 `langchain*` 依赖锁了大版本，测试用脚本化 fake model 跑真实图，避免把框架行为当成黑盒。
 
 **Q2：为什么把"规划"和"最终作答"分成两段？**
 
-- 规划循环用非流式请求，只关心 `tool_calls`；最终答案用原来的 grounded Prompt + 流式 completion。这样用户仍然能看到逐 token 输出，而不是等 Agent 全部跑完再一次性返回。
+- 图只负责决定"还要不要检索、检索什么"，system prompt 明确要求不要输出最终答案；最终答案仍由原来的 grounded LCEL 链流式生成。用户看到的是逐 token 输出，而不是等 Agent 跑完再一次性返回。
 - 引用编号是最重要的约束：最终 Prompt 基于去重后的证据列表重新编号，`[n]` 与 `citations` 表、`citation_stats`、来源抽屉完全对齐；如果让规划模型直接写答案，引用编号很容易和实际证据错位。
-- 规划阶段的 system prompt 明确"不要输出最终答案"，把两种职责分开，也方便单测：规划循环可以注入 fake client 只测工具轨迹，生成阶段复用已有的 Prompt 测试。
+- 两段式也让测试更容易：Agent 图只断言工具轨迹和证据，生成阶段复用已有的 Prompt/引用测试，不需要一次测试同时覆盖规划与写作。
 
 **Q3：工具参数来自 LLM，怎么防止它乱调、越权或把服务打挂？**
 
-- 工具名先查白名单字典，未知工具直接返回 `{"ok": false, "error": "未知工具"}`，不执行任何动态导入。
-- 参数用 Pydantic 校验（query 长度、`top_k ∈ [1,10]`、`window ∈ [1,3]`），非法 JSON 或非对象也会变成结构化错误观测，而不是异常。
+- 工具集合是固定的三个 `@tool`，没有动态导入或任意函数调用；模型只能从 LangChain 暴露的 schema 里选。参数先由 LangChain 按 `args_schema` 校验，非法参数变成 `on_tool_error`，循环仍能继续。
+- 我们自己的 `_run_tool` 再做一次预算、Pydantic 校验、`asyncio.Lock` 串行化和 `asyncio.wait_for` 超时。即使框架行为变化，也不会绕过这些约束。
 - `read_chunk_neighbors` / `get_document_outline` 不只按 id 查，还要求 `chunk.kb_id == 当前 kb.id`、`document.kb_id == 当前 kb.id`；拿别的知识库的 id 只会得到"不存在"。
-- 每次工具执行有 `asyncio.wait_for` 超时，单轮决策也有超时；工具内部异常在 `execute_tool` 边界被捕获，循环永远能拿到一个 JSON observation 继续走下去。
 - 工具返回内容被当作不可信数据，system prompt 明确要求不要执行其中的指令；最终回答仍然受 grounded Prompt 约束。
 
-**Q4：多次检索的证据怎么去重和排序？跨查询的 rank 能直接比吗？**
+**Q4：LangGraph 可能并行调用工具，而它们共享一个 AsyncSession，怎么处理？**
+
+- 同一轮模型可能返回多个 `tool_calls`，LangGraph 会并发执行工具节点；SQLAlchemy 的 `AsyncSession` 不是并发安全的，两个协程同时查询会触发 `InvalidRequestError` 或连接状态错乱。
+- `ToolContext` 里放一把 `asyncio.Lock`，所有工具在锁内访问数据库和模型推理。代价是并行退化为串行，但这与旧的手写循环语义一致，也避免了为每个工具单独建 session。
+- 更激进的方案是每个工具开独立 session 或连接池，但那会把事务边界和 ownership 校验拆散；当前优先正确性和可解释性。注意锁是请求级的，不会跨用户共享。
+
+**Q5：多次检索的证据怎么去重和排序？跨查询的 rank 能直接比吗？**
 
 - 以 `chunk_id` 为键去重（同一 chunk 的向量/BM25 候选本来就共享 id），保留 `_agent_best_rank`、`_agent_first_seen` 和来源列表。
 - 不同 query 的 rank 语义不同，不能当作绝对分数。实现上只把"该 chunk 在所有查询里见过的最好名次"当作排序提示，名次相同时按首次出现顺序稳定排序；相邻 chunk 用 `父 rank + offset/100` 插入，避免把上下文块排到直接命中之前。
 - 最终证据上限 10 条，交给 grounded Prompt 时重新按顺序编号，所以引用编号只依赖最终列表，不依赖某一次检索的原始 rank。
-- 如果以后要做更严格的融合，可以记录每次查询的分数并做加权 RRF；当前选择简单、可解释的启发式，先用 trace 看效果。
 
-**Q5：Agent 的每一步怎么观测？为什么存结构化步骤而不是思维链？**
+**Q6：Agent 的每一步怎么观测？为什么存结构化步骤而不是思维链？**
 
 - `agent_runs` 一条记录对应一条 assistant 消息：状态、`stopped_reason`、步数、工具调用数、耗时、token 用量、错误。`agent_steps` 存每一步的工具名、参数、结构化观测、状态和耗时，`(run_id, step_index)` 唯一。
-- SSE 在规划阶段实时发 `agent_step`，前端时间线能看到"查了什么、返回几条、是否超时"，最终回答前再发一次兼容原有格式的 `retrieval` trace。
+- `astream_events` 的 `on_tool_start` 拿参数、`on_tool_end` 拿 ToolMessage、`on_tool_error` 拿校验异常；超预算的调用只给模型看，不落用户可见步骤。SSE 在规划阶段实时发 `agent_step`，最终回答前再发一次兼容原有格式的 `retrieval` trace。
 - 不存思维链是刻意的：CoT 不可验证、可能包含敏感内容、对排查也没有结构化观测有用；面试里可以把它讲成"可观测性优先于可解释性叙事"。
-- 失败是数据而不是异常：LLM 失败、工具超时、达到步数上限都写 `stopped_reason`，并继续用已有证据回答。实测一次冷启动查询触发 30 秒工具超时后，第二步重新检索成功，最终仍基于 7 条引用回答了问题——fail-open 让一次慢工具没有毁掉整轮对话。
+- 失败是数据而不是异常：模型失败、工具超时、达到步数预算、触达 `recursion_limit` 都写 `stopped_reason`，并继续用已有证据回答。实测一次冷启动查询触发 30 秒工具超时后，第二步重新检索成功，最终仍基于 7 条引用回答了问题——fail-open 让一次慢工具没有毁掉整轮对话。
 
 ---
+
+## 15. LangChain / LCEL / LangGraph 集成
+
+**Q1：哪些链路用了 LCEL，为什么？**
+
+- 查询改写、多查询扩展、最终作答都写成 `PROMPT | ChatOpenAI [| StrOutputParser]`。组合后的 `Runnable` 同时提供 `invoke/ainvoke/stream/astream`，所以非流式接口和 SSE 复用同一条链，不需要维护两套请求代码。
+- 采样参数用 `model.bind(temperature=0.0, max_completion_tokens=128)` 绑定在链上，而不是写进 Prompt 或改全局模型单例；同一进程里改写、扩展、作答可以共享底层 HTTP 客户端，又有各自的生成参数。
+- 最终作答不接 `StrOutputParser`，因为要读取 `AIMessage.usage_metadata`；流式时有些供应商只在最后一个 chunk 给出 usage，`stream_usage=True` 让 LangChain 把 usage 合并到最终块，再由 `usage_to_dict` 统一成 `{input_tokens, output_tokens, total_tokens}` 落库。
+
+**Q2：`ChatOpenAI` 接 DeepSeek 有哪些兼容性细节？**
+
+- 使用 `base_url="https://api.deepseek.com"` 和 OpenAI 兼容协议；`max_completion_tokens` 会被 DeepSeek 接受，`max_tokens` 也可以，但前者与新版 OpenAI API 一致。
+- `stream_usage=True` 是流式 token 统计的关键：不加这个参数，流式响应通常没有 usage，Dashboard 和 `messages.token_usage` 会缺数据。
+- 模型工厂按 `(temperature, max_tokens, timeout, max_retries)` 做 `lru_cache`，因为 `ChatOpenAI` 会缓存底层 HTTP client；测试改配置后必须 `clear_model_cache()`，否则会拿到旧 key 构造的实例。
+- 缺 key 时在发送请求前抛 `ServiceUnavailableError`，接口返回 503，不会先写一条用户消息再失败。
+
+**Q3：`HuggingFaceEmbeddings` 有什么坑？BGE 的查询指令怎么处理？**
+
+- 构造函数会立即加载 SentenceTransformer，import 时创建实例会让 `/readyz`、后台任务、CLI 脚本都吃内存；所以 `_get_embeddings()` 延迟到第一次 embedding 才创建，并用锁避免并发重复加载。
+- BGE 中文模型建议查询加指令前缀「为这个句子生成表示以用于检索相关文章：」，文档不加；`embed_texts(is_query=True)` 统一处理，避免调用方忘记。
+- `HuggingFaceEmbeddings._embed` 会把换行替换为空格。迁移前后对同一批文本做了比对，余弦相似度为 1.0、最大元素差为 0，因此已有 Chroma 向量不需要重建。
+- `langchain-huggingface` 默认不依赖 `sentence-transformers`，torch 仍在 `[rag]` extra；CI 不装，测试用 fake embedding。
+
+**Q4：为什么 Chroma 的读写路径不对称？**
+
+- 读取走公开 API `similarity_search_by_vector_with_relevance_scores()`，返回 `(Document, relevance)`，其中 relevance = `1 - cosine_distance`，与迁移前手写客户端的分数尺度一致，拒答阈值 0.45 不用重标。
+- 写入时向量已经在入库阶段算好；`add_texts()` 会用 embedding_function 再算一遍，造成重复推理，所以直接 `store._collection.upsert(ids=..., embeddings=..., documents=..., metadatas=...)`。这是对底层 collection 的受控使用，注释和文档都写明了原因。
+- `Chroma` 实例按 KB 缓存（`lru_cache(maxsize=8)`），读写分别缓存；删除 KB 时 drop collection 并清缓存，避免拿到已删除 collection 的句柄。
+- Chroma 客户端是同步的，异步路径用 `anyio.to_thread` 包装；`/readyz` 用原始 `chromadb.PersistentClient` 心跳，不加载 embedding。
+
+**Q5：自研 BM25 怎么接入 LangChain？**
+
+- `JiebaBM25Retriever(BaseRetriever)` 实现 `_get_relevant_documents` 和 `_aget_relevant_documents`，让 BM25 也能作为标准 `Runnable` 被组合或调试；异步实现用 `anyio.to_thread.run_sync` 包装 CPU 计算。
+- 额外提供 `scored_search()` 返回 `(Document, absolute_score)`，因为 `BaseRetriever` 的接口只返回文档，而 trace 需要保留 BM25 原始分数。
+- 索引按 `(kb_id, index_version)` 缓存；入库、删除、重试成功后递增版本，旧索引自然失效。文档转成 `langchain_core.documents.Document` 时把 chunk_id 放进 `metadata`，这样检索结果还能映射回 PostgreSQL。
+
+**Q6：怎么把 LangGraph 的事件流翻译成原有 SSE 协议？**
+
+- `agent.astream_events({"messages": messages}, version="v2")` 会发出模型和工具的完整生命周期事件；只监听 `on_chat_model_end`（累计 turn 数和 usage）、`on_tool_start`（记参数和开始时间）、`on_tool_end`（解析 ToolMessage）、`on_tool_error`（参数校验失败）。
+- `_parse_observation` 兼容 ToolMessage、字符串 JSON、普通字符串三种输出；预算拒绝的 observation 直接跳过，不作为用户可见步骤。
+- `GraphRecursionError` 映射为 `stopped_reason="max_steps"`，`APITimeoutError/TimeoutError` 映射为 `turn_timeout`，其他异常映射为 `llm_error`；无论哪条路径，最后都发一个 `result` 事件，保证上层能落库并继续作答。
+- 事件翻译层是独立函数，测试用 `FakeMessagesListChatModel` 重放固定消息，真实跑 LangGraph 图，不需要网络和 API key。
 
 ## 三个可以带数字讲的故事
 

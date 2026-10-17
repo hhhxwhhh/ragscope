@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from openai import AsyncOpenAI
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,9 +20,10 @@ from app.models.feedback import MessageFeedback
 from app.models.knowledge_base import KnowledgeBase
 from app.models.message import Message, MessageRole, MessageStatus
 from app.models.retrieval_trace import RetrievalTrace
-from app.rag.llm import get_llm_client
+from app.rag.answer import complete_answer
+from app.rag.llm import get_chat_model
 from app.rag.pipeline import RetrievalOutcome, retrieve
-from app.rag.prompt import build_llm_messages, citation_stats, extract_citation_ranks
+from app.rag.prompt import citation_stats, extract_citation_ranks
 from app.schemas.chat import (
     AgentRunOut,
     AgentStepOut,
@@ -451,20 +451,6 @@ async def _save_assistant_message(
     )
 
 
-def _llm_payload(messages: list[dict[str, str]], *, stream: bool) -> dict[str, Any]:
-    settings = get_settings()
-    payload: dict[str, Any] = {
-        "model": settings.deepseek_model,
-        "messages": messages,
-        "temperature": 0.2,
-        "max_tokens": settings.max_answer_tokens,
-        "stream": stream,
-    }
-    if stream:
-        payload["stream_options"] = {"include_usage": True}
-    return payload
-
-
 async def answer_once(
     db: AsyncSession,
     kb: KnowledgeBase,
@@ -473,7 +459,8 @@ async def answer_once(
     conversation_id: UUID | None,
 ) -> tuple[Conversation, MessageBundle]:
     started = time.perf_counter()
-    client = get_llm_client()
+    # Fail before persisting a user turn when no API key is configured.
+    get_chat_model()
 
     conversation = await ensure_conversation(db, kb.id, user_id, conversation_id, question)
     history = await get_history(db, conversation.id, get_settings().history_messages)
@@ -490,20 +477,13 @@ async def answer_once(
     outcome = await retrieve(db, kb, question, history=history)
     usage: dict[str, Any] | None = None
     if outcome.candidates:
-        completion = await client.chat.completions.create(
-            **_llm_payload(
-                build_llm_messages(
-                    question,
-                    outcome.candidates,
-                    history,
-                    max_context_chars=get_settings().max_context_chars,
-                ),
-                stream=False,
-            )
+        answer, usage = await complete_answer(
+            question,
+            outcome.candidates,
+            history,
+            max_context_chars=get_settings().max_context_chars,
         )
-        answer = completion.choices[0].message.content or REFUSAL_MESSAGE
-        if completion.usage is not None:
-            usage = completion.usage.model_dump()
+        answer = answer or REFUSAL_MESSAGE
     else:
         answer = REFUSAL_MESSAGE
 
@@ -527,8 +507,7 @@ class StreamPreparation:
     conversation_id: UUID
     user_message_id: UUID
     outcome: RetrievalOutcome
-    llm_messages: list[dict[str, str]]
-    client: AsyncOpenAI
+    history: list[tuple[str, str]]
 
 
 async def prepare_stream(
@@ -544,7 +523,9 @@ async def prepare_stream(
     """
     from app.services.kb_service import get_owned_kb
 
-    client = get_llm_client()
+    # Resolve the cached model before writing anything: missing API key is a
+    # request-level 503, not a half-written conversation.
+    get_chat_model()
     async with SessionLocal() as db:
         kb = await get_owned_kb(db, kb_id, user_id)
         conversation = await ensure_conversation(db, kb.id, user_id, conversation_id, question)
@@ -559,20 +540,13 @@ async def prepare_stream(
         await db.flush()
 
         outcome = await retrieve(db, kb, question, history=history)
-        llm_messages = build_llm_messages(
-            question,
-            outcome.candidates,
-            history,
-            max_context_chars=get_settings().max_context_chars,
-        )
         conversation.last_message_at = datetime.now(UTC)
         await db.commit()
         return StreamPreparation(
             conversation_id=conversation.id,
             user_message_id=user_message.id,
             outcome=outcome,
-            llm_messages=llm_messages,
-            client=client,
+            history=history,
         )
 
 
@@ -603,14 +577,6 @@ async def save_streamed_answer(
         )
         await db.commit()
         return bundle
-
-
-def llm_stream_payload(messages: list[dict[str, str]]) -> dict[str, Any]:
-    return _llm_payload(messages, stream=True)
-
-
-def llm_payload(messages: list[dict[str, str]], *, stream: bool) -> dict[str, Any]:
-    return _llm_payload(messages, stream=stream)
 
 
 async def save_agent_answer_in_session(

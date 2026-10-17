@@ -20,13 +20,19 @@ def no_key(monkeypatch: pytest.MonkeyPatch):
         deepseek_api_key="",
         deepseek_base_url=real.deepseek_base_url,
         deepseek_model=real.deepseek_model,
+        max_answer_tokens=real.max_answer_tokens,
         llm_timeout_seconds=real.llm_timeout_seconds,
+        agent_temperature=real.agent_temperature,
+        agent_decision_max_tokens=real.agent_decision_max_tokens,
+        agent_turn_timeout_seconds=real.agent_turn_timeout_seconds,
     )
     monkeypatch.setattr(chat_api, "get_settings", lambda: fake)
     monkeypatch.setattr(llm_module, "get_settings", lambda: fake)
-    llm_module.get_llm_client.cache_clear()
+    # The model factory caches ChatOpenAI instances, so a previous test could
+    # otherwise hand back a client built with a real key.
+    llm_module.clear_model_cache()
     yield
-    llm_module.get_llm_client.cache_clear()
+    llm_module.clear_model_cache()
 
 
 async def _create_kb(client: AsyncClient, headers: dict[str, str]) -> str:

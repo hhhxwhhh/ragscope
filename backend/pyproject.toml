@@ -18,7 +18,15 @@ dependencies = [
     "alembic>=1.13",
     "redis>=5.0",
     "chromadb>=1.0",
-    "openai>=1.40",
+    # LangChain 1.x: LCEL chains, LangGraph agent, Chroma/embedding adapters.
+    # langchain-huggingface does not pull sentence-transformers unless the
+    # `full` extra is installed, so CI remains light.
+    "langchain>=1.4,<2",
+    "langgraph>=1.2,<2",
+    "langchain-openai>=1.7,<2",
+    "langchain-huggingface>=1.2,<2",
+    "langchain-chroma>=1.1,<2",
+    "openai>=2.45",
     "python-multipart>=0.0.9",
     "pyjwt>=2.9",
     "pwdlib[argon2]>=0.2",
