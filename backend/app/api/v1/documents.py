@@ -2,17 +2,17 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Query, UploadFile, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user
 from app.core.errors import ConflictError
 from app.db.session import get_db
 from app.models.chunk import Chunk
-from app.models.document import DocumentStatus
+from app.models.document import Document, DocumentStatus
 from app.models.user import User
 from app.schemas.common import Page
-from app.schemas.document import ChunkOut, DocumentOut
+from app.schemas.document import ChunkOut, ChunkSearchItem, DocumentOut
 from app.services import document_service, kb_service
 from app.workers.ingestion import run_ingestion
 
@@ -103,6 +103,40 @@ async def retry_document(
     await db.commit()
     background.add_task(run_ingestion, document.id)
     return DocumentOut.model_validate(document)
+
+
+@router.get("/kbs/{kb_id}/chunks", response_model=list[ChunkSearchItem])
+async def search_chunks(
+    kb_id: UUID,
+    db: DbSession,
+    current_user: CurrentUser,
+    q: Annotated[str | None, Query(max_length=200)] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> list[ChunkSearchItem]:
+    """Full-text-ish chunk lookup used by the eval annotation UI."""
+    await kb_service.get_owned_kb(db, kb_id, current_user.id)
+    stmt = (
+        select(Chunk, Document.filename)
+        .join(Document, Chunk.document_id == Document.id)
+        .where(Chunk.kb_id == kb_id)
+    )
+    if q:
+        pattern = f"%{q.strip()}%"
+        stmt = stmt.where(or_(Chunk.content.ilike(pattern), Chunk.heading_path.ilike(pattern)))
+    rows = (
+        await db.execute(stmt.order_by(Document.filename, Chunk.chunk_index).limit(limit))
+    ).all()
+    return [
+        ChunkSearchItem(
+            id=chunk.id,
+            document_id=chunk.document_id,
+            filename=filename,
+            chunk_index=chunk.chunk_index,
+            heading_path=chunk.heading_path,
+            content=chunk.content,
+        )
+        for chunk, filename in rows
+    ]
 
 
 @router.get("/documents/{document_id}/chunks", response_model=Page[ChunkOut])

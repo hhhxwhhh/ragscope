@@ -30,3 +30,12 @@ class ChunkOut(BaseModel):
     page_number: int | None
     char_start: int
     char_end: int
+
+
+class ChunkSearchItem(BaseModel):
+    id: UUID
+    document_id: UUID
+    filename: str
+    chunk_index: int
+    heading_path: str | None
+    content: str

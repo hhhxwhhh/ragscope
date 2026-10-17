@@ -159,3 +159,162 @@ export interface DebugResponse {
   counts: Record<string, number>
   candidates: Record<string, TraceCandidate[]>
 }
+
+export interface RelevantRef {
+  document_id: string
+  chunk_index: number
+  filename?: string | null
+}
+
+export interface EvalDataset {
+  id: string
+  kb_id: string
+  name: string
+  description: string | null
+  chunk_size: number
+  chunk_overlap: number
+  case_count: number
+  run_count: number
+  created_at: string
+  updated_at: string
+}
+
+export type EvalRunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+
+export interface EvalRun {
+  id: string
+  dataset_id: string
+  kb_id: string
+  base_run_id: string | null
+  status: EvalRunStatus
+  config: Record<string, unknown>
+  metrics: Record<string, number>
+  progress: { done?: number; total?: number; current_case?: string | null }
+  index_version: number
+  error: string | null
+  started_at: string | null
+  finished_at: string | null
+  created_at: string
+  dataset_name: string | null
+}
+
+export interface EvalCase {
+  id: string
+  dataset_id: string
+  question: string
+  relevant_refs: RelevantRef[]
+  answerable: boolean
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface RetrievedItem {
+  rank: number
+  chunk_id: string
+  document_id: string
+  filename: string
+  chunk_index: number
+  heading_path: string | null
+  content: string
+  vector_score?: number | null
+  bm25_score?: number | null
+  vector_rank?: number | null
+  bm25_rank?: number | null
+  fused_score?: number | null
+  rerank_score?: number | null
+}
+
+export interface EvalResult {
+  id: string
+  case_id: string
+  question: string
+  answerable: boolean
+  relevant_refs: RelevantRef[]
+  retrieved: RetrievedItem[]
+  metrics: Record<string, number | boolean | null>
+  refused: boolean
+  latency_ms: number
+  error: string | null
+}
+
+export interface EvalRunDetail extends EvalRun {
+  results: EvalResult[]
+}
+
+export interface MetricDelta {
+  key: string
+  label: string
+  base: number | null
+  candidate: number | null
+  delta: number | null
+}
+
+export interface CompareCase {
+  case_id: string
+  question: string
+  answerable: boolean
+  base_rank: number | null
+  candidate_rank: number | null
+  base_refused: boolean
+  candidate_refused: boolean
+  outcome: 'better' | 'worse' | 'same'
+  base_metrics: Record<string, number | boolean | null>
+  candidate_metrics: Record<string, number | boolean | null>
+}
+
+export interface EvalCompare {
+  base: EvalRun
+  candidate: EvalRun
+  metric_deltas: MetricDelta[]
+  cases: CompareCase[]
+  improved: number
+  degraded: number
+  unchanged: number
+}
+
+export interface ChunkSearchItem {
+  id: string
+  document_id: string
+  filename: string
+  chunk_index: number
+  heading_path: string | null
+  content: string
+}
+
+export interface RecentRun {
+  id: string
+  dataset_id: string
+  dataset_name: string
+  status: EvalRunStatus
+  recall_5: number | null
+  mrr: number | null
+  cases_total: number
+  created_at: string
+}
+
+export interface DashboardSummary {
+  kb_count: number
+  document_count: number
+  indexed_document_count: number
+  chunk_count: number
+  conversation_count: number
+  message_count: number
+  eval_dataset_count: number
+  eval_case_count: number
+  eval_run_count: number
+  avg_latency_ms: number
+  recent_runs: RecentRun[]
+}
+
+export interface TrendPoint {
+  date: string
+  messages: number
+  conversations: number
+  eval_runs: number
+}
+
+export interface DashboardTrend {
+  days: number
+  points: TrendPoint[]
+}

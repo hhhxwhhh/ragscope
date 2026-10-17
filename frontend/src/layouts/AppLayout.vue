@@ -9,7 +9,9 @@ const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 
-const activeMenu = computed(() => (route.path.startsWith('/kbs') ? '/kbs' : route.path))
+const activeMenu = computed(() =>
+  route.path.startsWith('/kbs') || route.path.startsWith('/eval') ? '/kbs' : route.path,
+)
 const displayName = computed(() => auth.user?.display_name || auth.user?.email || '用户')
 
 onMounted(() => {
@@ -46,7 +48,7 @@ async function handleLogout(): Promise<void> {
         </el-menu-item>
       </el-menu>
 
-      <div class="sidebar-foot muted">v0.2 · Week 2</div>
+      <div class="sidebar-foot muted">v0.3 · Week 3</div>
     </el-aside>
 
     <el-container>

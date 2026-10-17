@@ -45,6 +45,17 @@ const router = createRouter({
           component: () => import('@/views/ChatView.vue'),
           props: true,
         },
+        {
+          path: 'eval/runs/:id',
+          name: 'eval-run',
+          component: () => import('@/views/EvalRunView.vue'),
+          props: true,
+        },
+        {
+          path: 'eval/compare',
+          name: 'eval-compare',
+          component: () => import('@/views/EvalCompareView.vue'),
+        },
       ],
     },
     { path: '/:pathMatch(.*)*', redirect: '/dashboard' },

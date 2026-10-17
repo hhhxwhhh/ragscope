@@ -36,7 +36,7 @@ class RetrievalConfig:
     rrf_k: int = 60
     vector_weight: float = 1.0
     bm25_weight: float = 1.0
-    min_vector_score: float = 0.35
+    min_vector_score: float = 0.45
     use_rerank: bool = True
     rerank_timeout_seconds: float = 3.0
 
@@ -163,12 +163,20 @@ async def retrieve(
     timings["vector_ms"] = _ms(started)
 
     started = time.perf_counter()
-    bm25_hits = await bm25_index.search(
-        db,
-        kb.id,
-        kb.index_version,
-        rewritten,
-        config.bm25_top_k,
+    # Lexical retrieval is gated by the dense score: BM25 has no absolute
+    # threshold and will happily match a stray character in an off-topic
+    # question, which would otherwise defeat refusal. If no dense candidate
+    # clears the bar, treat the query as out-of-scope and skip BM25.
+    bm25_hits = (
+        await bm25_index.search(
+            db,
+            kb.id,
+            kb.index_version,
+            rewritten,
+            config.bm25_top_k,
+        )
+        if vector_hits
+        else []
     )
     timings["bm25_ms"] = _ms(started)
 

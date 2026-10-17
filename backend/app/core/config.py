@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     fusion_top_k: int = 20
     final_top_k: int = 5
     rrf_k: int = 60
-    min_vector_score: float = 0.35
+    min_vector_score: float = 0.45
     query_rewrite_enabled: bool = True
     query_rewrite_timeout_seconds: float = 8.0
 

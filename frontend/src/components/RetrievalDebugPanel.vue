@@ -1,10 +1,17 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 
 import { debugRetrieval } from '@/api/chat'
-import type { DebugRequest, DebugResponse, TraceCandidate } from '@/types'
+import { createCase, createDataset, listDatasets } from '@/api/eval'
+import type {
+  DebugRequest,
+  DebugResponse,
+  EvalDataset,
+  RelevantRef,
+  TraceCandidate,
+} from '@/types'
 
 const props = defineProps<{
   kbId: string
@@ -25,7 +32,7 @@ const form = reactive({
   fusion_top_k: 20,
   final_top_k: 5,
   rrf_k: 60,
-  min_vector_score: 0.35,
+  min_vector_score: 0.45,
   use_rerank: true,
 })
 
@@ -73,6 +80,108 @@ const timingRows = computed(() => {
 })
 
 const totalMs = computed(() => Number(result.value?.stage_timings.total_ms || 0))
+
+const saveDialogVisible = ref(false)
+const saveSaving = ref(false)
+const datasets = ref<EvalDataset[]>([])
+const saveDatasetId = ref('')
+const saveQuestion = ref('')
+const saveAnswerable = ref(true)
+const saveNotes = ref('')
+const saveRefs = ref<RelevantRef[]>([])
+
+const finalCandidates = computed<TraceCandidate[]>(() => result.value?.candidates.final || [])
+
+function isSavedRef(candidate: TraceCandidate): boolean {
+  return saveRefs.value.some(
+    (ref) =>
+      ref.document_id === candidate.document_id && ref.chunk_index === candidate.chunk_index,
+  )
+}
+
+function toggleSavedRef(candidate: TraceCandidate): void {
+  if (isSavedRef(candidate)) {
+    saveRefs.value = saveRefs.value.filter(
+      (ref) =>
+        !(ref.document_id === candidate.document_id && ref.chunk_index === candidate.chunk_index),
+    )
+    return
+  }
+  saveRefs.value.push({
+    document_id: candidate.document_id,
+    chunk_index: candidate.chunk_index,
+    filename: candidate.filename,
+  })
+}
+
+async function loadDatasets(): Promise<void> {
+  const page = await listDatasets(props.kbId)
+  datasets.value = page.items
+  if (!datasets.value.some((item) => item.id === saveDatasetId.value)) {
+    saveDatasetId.value = datasets.value[0]?.id || ''
+  }
+}
+
+async function openSaveDialog(): Promise<void> {
+  if (!result.value) {
+    return
+  }
+  saveQuestion.value = result.value.query
+  saveAnswerable.value = true
+  saveNotes.value = ''
+  saveRefs.value = []
+  saveDialogVisible.value = true
+  try {
+    await loadDatasets()
+  } catch {
+    // Error toast is handled by the axios interceptor.
+  }
+}
+
+async function createDatasetInline(): Promise<void> {
+  try {
+    const { value } = await ElMessageBox.prompt('新数据集名称', '新建数据集', {
+      confirmButtonText: '创建',
+      cancelButtonText: '取消',
+      inputPattern: /\S+/,
+      inputErrorMessage: '名称不能为空',
+    })
+    const dataset = await createDataset(props.kbId, { name: value.trim() })
+    await loadDatasets()
+    saveDatasetId.value = dataset.id
+    ElMessage.success('数据集已创建')
+  } catch {
+    // Cancelled by the user, or the axios interceptor already showed the error.
+  }
+}
+
+async function submitSavedCase(): Promise<void> {
+  if (!saveDatasetId.value) {
+    ElMessage.warning('请选择或新建一个数据集')
+    return
+  }
+  if (!saveQuestion.value.trim()) {
+    ElMessage.warning('请输入问题')
+    return
+  }
+  if (saveAnswerable.value && !saveRefs.value.length) {
+    ElMessage.warning('请至少勾选一个包含答案的 chunk，或标记为不可答')
+    return
+  }
+  saveSaving.value = true
+  try {
+    await createCase(saveDatasetId.value, {
+      question: saveQuestion.value.trim(),
+      answerable: saveAnswerable.value,
+      relevant_refs: saveAnswerable.value ? saveRefs.value : [],
+      notes: saveNotes.value.trim() || null,
+    })
+    saveDialogVisible.value = false
+    ElMessage.success('已保存为评测用例')
+  } finally {
+    saveSaving.value = false
+  }
+}
 
 const effectiveConfig = computed(() => {
   if (!result.value) {
@@ -138,10 +247,6 @@ function fmt(value: number | null | undefined): string {
 function useQuery(text: string): void {
   query.value = text
   run()
-}
-
-function notReady(): void {
-  ElMessage.info('保存为评测用例将在 Week 3 上线')
 }
 
 watch(
@@ -328,13 +433,91 @@ watch(
       </el-tabs>
 
       <div class="footer-actions">
-        <el-button disabled @click="notReady">保存为评测用例</el-button>
-        <span class="muted">Week 3：把一次检索固化成可回归的用例</span>
+        <el-button type="primary" plain @click="openSaveDialog">保存为评测用例</el-button>
+        <span class="muted">把这次检索固化成可回归的评测用例</span>
       </div>
     </template>
 
+    <el-dialog v-model="saveDialogVisible" title="保存为评测用例" width="680px">
+      <el-form label-position="top">
+        <el-form-item label="数据集" required>
+          <div class="dataset-picker">
+            <el-select v-model="saveDatasetId" placeholder="选择数据集" style="flex: 1">
+              <el-option
+                v-for="dataset in datasets"
+                :key="dataset.id"
+                :label="`${dataset.name}（${dataset.case_count} 用例）`"
+                :value="dataset.id"
+              />
+            </el-select>
+            <el-button @click="createDatasetInline">新建数据集</el-button>
+          </div>
+          <div v-if="!datasets.length" class="muted form-hint">
+            还没有数据集，先新建一个，用例会记录当前知识库的切块参数。
+          </div>
+        </el-form-item>
+
+        <el-form-item label="问题" required>
+          <el-input v-model="saveQuestion" type="textarea" :rows="2" maxlength="2000" />
+        </el-form-item>
+
+        <el-form-item label="类型">
+          <el-radio-group v-model="saveAnswerable">
+            <el-radio :value="true">可回答</el-radio>
+            <el-radio :value="false">不可回答（应触发拒答）</el-radio>
+          </el-radio-group>
+        </el-form-item>
+
+        <el-form-item label="备注">
+          <el-input v-model="saveNotes" maxlength="1000" placeholder="可选，例如：来自调试台的漏检分析" />
+        </el-form-item>
+      </el-form>
+
+      <template v-if="saveAnswerable">
+        <div class="save-ref-title">
+          勾选包含答案的 chunk
+          <span class="muted">（来自当前最终结果，共 {{ finalCandidates.length }} 条）</span>
+        </div>
+        <div class="save-ref-list">
+          <button
+            v-for="candidate in finalCandidates"
+            :key="candidate.chunk_id"
+            class="save-ref-item"
+            :class="{ selected: isSavedRef(candidate) }"
+            @click="toggleSavedRef(candidate)"
+          >
+            <el-checkbox :model-value="isSavedRef(candidate)" @click.prevent />
+            <div class="save-ref-main">
+              <div class="save-ref-head">
+                <span class="save-ref-file">
+                  {{ candidate.filename }} #{{ candidate.chunk_index }}
+                </span>
+                <span class="muted">{{ candidate.heading_path || '无标题' }}</span>
+              </div>
+              <div class="save-ref-content">{{ candidate.content }}</div>
+            </div>
+          </button>
+          <el-empty
+            v-if="!finalCandidates.length"
+            :image-size="60"
+            description="当前没有最终候选，可改为保存不可答案例"
+          />
+        </div>
+        <div class="muted form-hint">
+          这里只列出最终结果。若正确答案不在其中，请到知识库「评测」页按关键词搜索 chunk 标注。
+        </div>
+      </template>
+
+      <template #footer>
+        <el-button @click="saveDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saveSaving" @click="submitSavedCase">
+          保存用例
+        </el-button>
+      </template>
+    </el-dialog>
+
     <el-empty
-      v-else-if="!loading"
+      v-if="!result && !loading"
       description="输入问题后，可以看到向量、BM25、融合与重排四个阶段的候选"
     />
   </div>
@@ -524,6 +707,83 @@ watch(
   gap: 12px;
   margin-top: 12px;
   font-size: 12px;
+}
+
+.dataset-picker {
+  display: flex;
+  width: 100%;
+  gap: 8px;
+}
+
+.form-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.save-ref-title {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.save-ref-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+  padding: 2px;
+}
+
+.save-ref-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 9px 11px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.save-ref-item:hover {
+  border-color: #c7d2fe;
+}
+
+.save-ref-item.selected {
+  border-color: #6366f1;
+  background: #eef2ff;
+}
+
+.save-ref-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.save-ref-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.save-ref-file {
+  font-weight: 600;
+}
+
+.save-ref-content {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 3px;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.6;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .ok-text {

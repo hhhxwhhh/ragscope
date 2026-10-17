@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   ElMessage,
   ElMessageBox,
@@ -8,6 +8,7 @@ import {
 } from 'element-plus'
 import { Refresh, UploadFilled } from '@element-plus/icons-vue'
 
+import EvalPanel from '@/components/EvalPanel.vue'
 import RetrievalDebugPanel from '@/components/RetrievalDebugPanel.vue'
 import { getKb } from '@/api/kb'
 import {
@@ -20,13 +21,21 @@ import {
 import type { ChunkItem, DocumentItem, DocumentStatus, KnowledgeBase } from '@/types'
 
 const props = defineProps<{ id: string }>()
+const route = useRoute()
 const router = useRouter()
+
+const TABS = ['documents', 'debug', 'eval']
+
+function tabFromQuery(): string {
+  const tab = route.query.tab
+  return typeof tab === 'string' && TABS.includes(tab) ? tab : 'documents'
+}
 
 const kb = ref<KnowledgeBase | null>(null)
 const documents = ref<DocumentItem[]>([])
 const loading = ref(false)
 const uploading = ref(false)
-const activeTab = ref('documents')
+const activeTab = ref(tabFromQuery())
 
 const drawerVisible = ref(false)
 const chunkLoading = ref(false)
@@ -199,6 +208,13 @@ watch(
   { immediate: true },
 )
 
+watch(
+  () => route.query.tab,
+  () => {
+    activeTab.value = tabFromQuery()
+  },
+)
+
 onUnmounted(stopPolling)
 </script>
 
@@ -293,12 +309,12 @@ onUnmounted(stopPolling)
           />
         </el-tab-pane>
 
-        <el-tab-pane label="检索调试" name="debug">
+        <el-tab-pane label="检索调试" name="debug" lazy>
           <RetrievalDebugPanel :kb-id="id" :defaults="kb?.retrieval_config" />
         </el-tab-pane>
 
-        <el-tab-pane label="评测" name="eval">
-          <el-empty description="Week 3 上线：数据集、recall@k / MRR、两次运行对比" />
+        <el-tab-pane label="评测" name="eval" lazy>
+          <EvalPanel :kb-id="id" />
         </el-tab-pane>
       </el-tabs>
     </el-card>

@@ -2,6 +2,13 @@ from app.models.chunk import Chunk
 from app.models.citation import Citation
 from app.models.conversation import Conversation
 from app.models.document import Document, DocumentStatus
+from app.models.evaluation import (
+    EvalCase,
+    EvalDataset,
+    EvalResult,
+    EvalRun,
+    EvalRunStatus,
+)
 from app.models.knowledge_base import KnowledgeBase
 from app.models.message import Message, MessageRole, MessageStatus
 from app.models.retrieval_trace import RetrievalTrace
@@ -13,6 +20,11 @@ __all__ = [
     "Conversation",
     "Document",
     "DocumentStatus",
+    "EvalCase",
+    "EvalDataset",
+    "EvalResult",
+    "EvalRun",
+    "EvalRunStatus",
     "KnowledgeBase",
     "Message",
     "MessageRole",
