@@ -1,7 +1,8 @@
 import logging
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import anyio
 from sqlalchemy import delete, update
@@ -10,7 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.chunk import Chunk
 from app.models.document import Document, DocumentStatus
 from app.models.knowledge_base import KnowledgeBase
+from app.rag import vector_store
 from app.rag.chunker import build_chunks
+from app.rag.embedder import embed_texts_async
 from app.rag.parsers import parse_document
 
 logger = logging.getLogger(__name__)
@@ -25,6 +28,7 @@ async def ingest_document(db: AsyncSession, document_id: UUID) -> None:
         return
 
     stage = "parsing"
+    vector_cleanup = False
     try:
         document.status = DocumentStatus.PARSING
         document.error_stage = None
@@ -49,36 +53,74 @@ async def ingest_document(db: AsyncSession, document_id: UUID) -> None:
         if not drafts:
             raise ValueError("文档没有可索引的内容（每个切块至少 30 字）")
 
+        # Embed outside the write transaction: this is the slowest stage.
+        stage = "embedding"
+        embeddings = await embed_texts_async([draft.embedding_text for draft in drafts])
+
         stage = "indexing"
         document.status = DocumentStatus.INDEXING
         await db.commit()
 
-        # Retrying must be idempotent: remove chunks from any previous attempt.
+        # Retrying must be idempotent: remove chunks and vectors from any previous attempt.
         await db.execute(delete(Chunk).where(Chunk.document_id == document.id))
-        db.add_all(
-            [
-                Chunk(
-                    document_id=document.id,
-                    kb_id=document.kb_id,
-                    chunk_index=index,
-                    content=draft.content,
-                    embedding_text=draft.embedding_text,
-                    heading_path=draft.heading_path,
-                    char_start=draft.char_start,
-                    char_end=draft.char_end,
-                )
-                for index, draft in enumerate(drafts)
-            ]
+        await anyio.to_thread.run_sync(
+            vector_store.delete_document_chunks, document.kb_id, document.id
+        )
+        vector_cleanup = True
+
+        rows = [
+            Chunk(
+                id=uuid4(),
+                document_id=document.id,
+                kb_id=document.kb_id,
+                chunk_index=index,
+                content=draft.content,
+                embedding_text=draft.embedding_text,
+                heading_path=draft.heading_path,
+                char_start=draft.char_start,
+                char_end=draft.char_end,
+            )
+            for index, draft in enumerate(drafts)
+        ]
+        db.add_all(rows)
+        await db.flush()
+
+        new_index_version = kb.index_version + 1
+        await anyio.to_thread.run_sync(
+            partial(
+                vector_store.upsert_chunks,
+                kb.id,
+                new_index_version,
+                [
+                    vector_store.ChunkVector(
+                        chunk_id=str(row.id),
+                        document_id=str(document.id),
+                        chunk_index=row.chunk_index,
+                        filename=document.filename,
+                        heading_path=row.heading_path or "",
+                        content=row.content,
+                        embedding=embedding,
+                    )
+                    for row, embedding in zip(rows, embeddings, strict=False)
+                ],
+            )
         )
 
         document.chunk_count = len(drafts)
         document.indexed_at = datetime.now(UTC)
         document.status = DocumentStatus.INDEXED
-        kb.index_version += 1
+        kb.index_version = new_index_version
         await db.commit()
 
     except Exception as exc:
         await db.rollback()
+        if vector_cleanup:
+            try:
+                await anyio.to_thread.run_sync(
+                    vector_store.delete_document_chunks, document.kb_id, document_id
+                )
+            except Exception:
+                logger.exception("failed to clean up vectors for %s", document_id)
         await _mark_failed(db, document_id, stage, exc)
         logger.warning("ingestion failed for %s at %s: %s", document_id, stage, exc)
 

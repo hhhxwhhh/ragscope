@@ -47,7 +47,27 @@ class Settings(BaseSettings):
 
     # Models
     embedding_model: str = "BAAI/bge-small-zh-v1.5"
+    embedding_device: str = ""
+    embedding_batch_size: int = 32
     reranker_model: str = "BAAI/bge-reranker-base"
+    rerank_enabled: bool = True
+    rerank_timeout_seconds: float = 3.0
+
+    # Retrieval
+    vector_top_k: int = 20
+    bm25_top_k: int = 20
+    fusion_top_k: int = 20
+    final_top_k: int = 5
+    rrf_k: int = 60
+    min_vector_score: float = 0.35
+    query_rewrite_enabled: bool = True
+    query_rewrite_timeout_seconds: float = 8.0
+
+    # Chat
+    llm_timeout_seconds: float = 60.0
+    max_answer_tokens: int = 1024
+    history_messages: int = 6
+    max_context_chars: int = 6000
 
     # Storage
     chroma_dir: str = str(BACKEND_DIR / "data" / "chroma")

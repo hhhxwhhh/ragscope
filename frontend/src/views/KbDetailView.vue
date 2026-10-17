@@ -8,6 +8,7 @@ import {
 } from 'element-plus'
 import { Refresh, UploadFilled } from '@element-plus/icons-vue'
 
+import RetrievalDebugPanel from '@/components/RetrievalDebugPanel.vue'
 import { getKb } from '@/api/kb'
 import {
   deleteDocument,
@@ -214,6 +215,9 @@ onUnmounted(stopPolling)
       <div class="tags">
         <el-tag size="small" type="info">chunk {{ kb.chunk_size }} / {{ kb.chunk_overlap }}</el-tag>
         <el-tag size="small" type="info">索引版本 {{ kb.index_version }}</el-tag>
+        <el-button type="primary" size="small" @click="router.push(`/kbs/${kb.id}/chat`)">
+          开始问答
+        </el-button>
       </div>
     </div>
 
@@ -290,7 +294,7 @@ onUnmounted(stopPolling)
         </el-tab-pane>
 
         <el-tab-pane label="检索调试" name="debug">
-          <el-empty description="Week 2 上线：query 改写、向量/BM25 候选、RRF 融合与 rerank 耗时" />
+          <RetrievalDebugPanel :kb-id="id" :defaults="kb?.retrieval_config" />
         </el-tab-pane>
 
         <el-tab-pane label="评测" name="eval">

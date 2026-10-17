@@ -45,3 +45,8 @@ class PayloadTooLargeError(AppError):
 class UnsupportedMediaTypeError(AppError):
     status_code = 415
     code = "unsupported_media_type"
+
+
+class ServiceUnavailableError(AppError):
+    status_code = 503
+    code = "service_unavailable"

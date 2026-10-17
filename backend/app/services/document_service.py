@@ -1,6 +1,8 @@
+import logging
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import anyio
 from fastapi import UploadFile
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +11,10 @@ from app.core.errors import ConflictError, NotFoundError
 from app.models.chunk import Chunk
 from app.models.document import Document, DocumentStatus
 from app.models.knowledge_base import KnowledgeBase
+from app.rag import vector_store
 from app.services.storage import remove_stored_file, sanitize_filename, save_upload
+
+logger = logging.getLogger(__name__)
 
 
 async def get_owned_document(
@@ -80,6 +85,10 @@ async def create_document(
 
 async def reset_for_retry(db: AsyncSession, document: Document) -> None:
     await db.execute(delete(Chunk).where(Chunk.document_id == document.id))
+    kb = await db.get(KnowledgeBase, document.kb_id)
+    if kb is not None:
+        # Invalidates the BM25 cache for this knowledge base.
+        kb.index_version += 1
     document.status = DocumentStatus.PENDING
     document.error_stage = None
     document.error_message = None
@@ -90,4 +99,13 @@ async def reset_for_retry(db: AsyncSession, document: Document) -> None:
 
 async def delete_document(db: AsyncSession, document: Document) -> None:
     remove_stored_file(document.storage_path)
+    try:
+        await anyio.to_thread.run_sync(
+            vector_store.delete_document_chunks, document.kb_id, document.id
+        )
+    except Exception:
+        logger.exception("failed to delete vectors for document %s", document.id)
+    kb = await db.get(KnowledgeBase, document.kb_id)
+    if kb is not None:
+        kb.index_version += 1
     await db.delete(document)

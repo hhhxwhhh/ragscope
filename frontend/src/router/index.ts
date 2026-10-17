@@ -39,6 +39,12 @@ const router = createRouter({
           component: () => import('@/views/KbDetailView.vue'),
           props: true,
         },
+        {
+          path: 'kbs/:id/chat/:conversationId?',
+          name: 'kb-chat',
+          component: () => import('@/views/ChatView.vue'),
+          props: true,
+        },
       ],
     },
     { path: '/:pathMatch(.*)*', redirect: '/dashboard' },

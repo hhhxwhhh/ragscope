@@ -1,11 +1,13 @@
 from uuid import UUID
 
+import anyio
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import BadRequestError, ConflictError, NotFoundError
 from app.models.document import Document
 from app.models.knowledge_base import KnowledgeBase
+from app.rag import vector_store
 from app.schemas.kb import KbCreate, KbUpdate
 from app.services.storage import remove_stored_file
 
@@ -87,5 +89,6 @@ async def delete_kb(db: AsyncSession, kb: KnowledgeBase) -> None:
     paths = (await db.scalars(select(Document.storage_path).where(Document.kb_id == kb.id))).all()
     for path in paths:
         remove_stored_file(path)
+    await anyio.to_thread.run_sync(vector_store.drop_kb_collection, kb.id)
     # documents/chunks are removed by ON DELETE CASCADE in PostgreSQL.
     await db.delete(kb)
