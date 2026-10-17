@@ -27,6 +27,8 @@ import {
   upsertFeedback,
 } from '@/api/chat'
 import type {
+  AgentRun,
+  AgentStep,
   ChatMessage,
   Citation,
   Conversation,
@@ -53,6 +55,11 @@ const citationDrawer = ref(false)
 const activeCitations = ref<Citation[]>([])
 const activeCitationRank = ref<number | null>(null)
 const expandedTraces = reactive(new Set<string>())
+const expandedAgents = reactive(new Set<string>())
+
+// Agent mode is a per-browser preference: it costs extra LLM calls, so it is
+// opt-in and remembered across conversations.
+const agentMode = ref(localStorage.getItem('ragscope.agent-mode') === '1')
 
 const conversationQuery = ref('')
 let searchTimer: ReturnType<typeof setTimeout> | undefined
@@ -88,7 +95,24 @@ const stageLabels: Record<string, string> = {
   bm25_ms: 'BM25',
   fusion_ms: 'RRF 融合',
   rerank_ms: '重排',
+  agent_ms: 'Agent 规划',
   total_ms: '总计',
+}
+
+const toolLabels: Record<string, string> = {
+  search_knowledge_base: '检索知识库',
+  read_chunk_neighbors: '读取相邻 chunk',
+  get_document_outline: '查看文档大纲',
+}
+
+const stoppedReasonLabels: Record<string, string> = {
+  model_finished: '模型判断证据充足',
+  max_steps: '达到最大工具步数',
+  turn_timeout: '决策超时',
+  llm_error: '模型调用失败',
+  cancelled: '已停止',
+  failed: '执行失败',
+  running: '规划中…',
 }
 
 function formatTime(value: string): string {
@@ -125,6 +149,80 @@ function citedCitations(message: ChatMessage): Citation[] {
 
 function stageLabel(stage: string): string {
   return stageLabels[stage] || stage
+}
+
+function toolLabel(name: string): string {
+  return toolLabels[name] || name
+}
+
+function stoppedReasonLabel(run: AgentRun): string {
+  const reason = run.stopped_reason || (run.status === 'completed' ? 'model_finished' : run.status)
+  return stoppedReasonLabels[reason] || reason
+}
+
+function agentArgs(step: AgentStep): string {
+  const args = step.arguments || {}
+  if (typeof args.query === 'string') {
+    return `query: ${args.query}`
+  }
+  if (typeof args.chunk_id === 'string') {
+    return `chunk: ${args.chunk_id.slice(0, 8)} · window ${String(args.window ?? 1)}`
+  }
+  if (typeof args.document_id === 'string') {
+    return `document: ${args.document_id.slice(0, 8)}`
+  }
+  return JSON.stringify(args)
+}
+
+function agentObservationSummary(step: AgentStep): string {
+  const obs = step.observation || {}
+  if (obs.ok === false) {
+    return `错误：${String(obs.error || '未知错误')}`
+  }
+  if (Array.isArray(obs.results)) {
+    const first = obs.results[0] as Record<string, unknown> | undefined
+    const preview = first && typeof first.preview === 'string' ? first.preview : ''
+    return `${String(obs.count ?? obs.results.length)} 条结果${preview ? ` · ${preview}` : ''}`
+  }
+  if (Array.isArray(obs.neighbors)) {
+    return `${String(obs.count ?? obs.neighbors.length)} 个相邻 chunk`
+  }
+  if (Array.isArray(obs.outline)) {
+    return `${String(obs.chunk_count ?? '—')} 个 chunk · ${obs.outline.length} 个标题`
+  }
+  return '完成'
+}
+
+function toggleAgent(message: ChatMessage): void {
+  if (expandedAgents.has(message.id)) {
+    expandedAgents.delete(message.id)
+  } else {
+    expandedAgents.add(message.id)
+  }
+}
+
+function toggleAgentMode(): void {
+  if (!sending.value) {
+    agentMode.value = !agentMode.value
+  }
+}
+
+function appendAgentStep(message: ChatMessage, step: AgentStep): void {
+  const run: AgentRun = message.agent || {
+    id: `local-agent-${message.id}`,
+    status: 'running',
+    stopped_reason: null,
+    step_count: 0,
+    tool_calls: 0,
+    latency_ms: null,
+    error: null,
+    steps: [],
+  }
+  run.steps.push(step)
+  run.step_count = run.steps.length
+  run.tool_calls = run.steps.length
+  message.agent = run
+  expandedAgents.add(message.id)
 }
 
 function scrollToBottom(): void {
@@ -183,6 +281,7 @@ function makeLocalMessage(role: 'user' | 'assistant', content: string): ChatMess
     citations: [],
     trace: null,
     feedback: null,
+    agent: null,
   }
 }
 
@@ -207,7 +306,11 @@ async function send(): Promise<void> {
   try {
     await streamChat(
       props.id,
-      { question, conversation_id: activeConversationId.value || null },
+      {
+        question,
+        conversation_id: activeConversationId.value || null,
+        mode: agentMode.value ? 'agent' : 'rag',
+      },
       {
         onMeta: (meta) => {
           if (!activeConversationId.value) {
@@ -217,6 +320,10 @@ async function send(): Promise<void> {
         onRetrieval: (trace) => {
           assistantMessage.trace = trace
           assistantMessage.rewrite_query = trace.rewritten_query
+        },
+        onAgentStep: (step) => {
+          appendAgentStep(assistantMessage, step)
+          scrollToBottom()
         },
         onToken: (delta) => {
           streamedText += delta
@@ -237,6 +344,10 @@ async function send(): Promise<void> {
         },
         onError: (detail) => {
           assistantMessage.status = 'failed'
+          if (assistantMessage.agent) {
+            assistantMessage.agent.status = 'failed'
+            assistantMessage.agent.stopped_reason = 'failed'
+          }
           ElMessage.error(detail)
         },
       },
@@ -246,6 +357,10 @@ async function send(): Promise<void> {
     if (error instanceof DOMException && error.name === 'AbortError') {
       assistantMessage.status = 'cancelled'
       assistantMessage.content = streamedText
+      if (assistantMessage.agent) {
+        assistantMessage.agent.status = 'cancelled'
+        assistantMessage.agent.stopped_reason = 'cancelled'
+      }
       ElMessage.info('已停止生成')
     } else {
       assistantMessage.status = 'failed'
@@ -455,6 +570,10 @@ watch(
   { immediate: true },
 )
 
+watch(agentMode, (value) => {
+  localStorage.setItem('ragscope.agent-mode', value ? '1' : '0')
+})
+
 onMounted(scrollToBottom)
 </script>
 
@@ -523,6 +642,15 @@ onMounted(scrollToBottom)
         </div>
         <div class="chat-head-actions">
           <el-tag v-if="sending" type="warning" size="small">生成中…</el-tag>
+          <label class="mode-toggle" title="Agent 模式会先规划并多次检索，再基于证据回答">
+            <el-switch v-model="agentMode" size="small" :disabled="sending" />
+            <span
+              :class="{ active: agentMode, disabled: sending }"
+              @click="toggleAgentMode"
+            >
+              Agent 检索
+            </span>
+          </label>
           <el-button
             v-if="activeConversationId"
             size="small"
@@ -589,6 +717,13 @@ onMounted(scrollToBottom)
               </el-button>
               <el-button v-if="message.trace" text size="small" @click.stop="toggleTrace(message)">
                 {{ expandedTraces.has(message.id) ? '收起检索详情' : '检索详情' }}
+              </el-button>
+              <el-button v-if="message.agent" text size="small" @click.stop="toggleAgent(message)">
+                {{
+                  expandedAgents.has(message.id)
+                    ? '收起 Agent 步骤'
+                    : `Agent 步骤 (${message.agent.steps.length})`
+                }}
               </el-button>
               <span v-if="message.status === 'cancelled'" class="muted">已停止</span>
               <span v-if="message.status === 'failed'" class="error-text">生成失败</span>
@@ -698,6 +833,60 @@ onMounted(scrollToBottom)
                   </div>
                 </div>
               </div>
+            </div>
+
+            <div
+              v-if="message.agent && expandedAgents.has(message.id)"
+              class="agent-panel"
+            >
+              <div class="agent-panel-head">
+                <span class="trace-label">Agent 规划</span>
+                <el-tag
+                  size="small"
+                  :type="
+                    message.agent.status === 'running'
+                      ? 'warning'
+                      : message.agent.status === 'completed'
+                        ? 'success'
+                        : 'info'
+                  "
+                >
+                  {{
+                    message.agent.status === 'running'
+                      ? '运行中'
+                      : message.agent.status === 'completed'
+                        ? '已完成'
+                        : message.agent.status
+                  }}
+                </el-tag>
+                <span class="muted">{{ stoppedReasonLabel(message.agent) }}</span>
+                <span v-if="message.agent.latency_ms !== null" class="muted">
+                  · {{ message.agent.latency_ms }} ms
+                </span>
+                <span class="muted">· {{ message.agent.tool_calls }} 次工具</span>
+              </div>
+              <div
+                v-for="step in message.agent.steps"
+                :key="step.step_index"
+                class="agent-step"
+              >
+                <div class="agent-step-head">
+                  <span class="agent-step-index">{{ step.step_index }}</span>
+                  <span class="agent-step-tool">{{ toolLabel(step.tool_name) }}</span>
+                  <el-tag size="small" :type="step.status === 'ok' ? 'success' : 'danger'">
+                    {{ step.status }}
+                  </el-tag>
+                  <span class="muted">{{ step.latency_ms }} ms</span>
+                </div>
+                <div class="agent-step-args">{{ agentArgs(step) }}</div>
+                <div
+                  class="agent-step-obs"
+                  :class="{ 'error-text': step.status !== 'ok' }"
+                >
+                  {{ agentObservationSummary(step) }}
+                </div>
+              </div>
+              <div v-if="!message.agent.steps.length" class="muted">没有执行工具调用</div>
             </div>
           </div>
         </div>
@@ -902,6 +1091,26 @@ onMounted(scrollToBottom)
   gap: 10px;
 }
 
+.mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #64748b;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.mode-toggle .active {
+  color: #4338ca;
+  font-weight: 600;
+}
+
+.mode-toggle .disabled {
+  color: #cbd5e1;
+  cursor: not-allowed;
+}
+
 .chat-title {
   font-size: 16px;
   font-weight: 600;
@@ -1052,6 +1261,71 @@ onMounted(scrollToBottom)
   display: flex;
   gap: 12px;
   margin-bottom: 6px;
+}
+
+.agent-panel {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px dashed #a7f3d0;
+  border-radius: 10px;
+  background: #f6fffb;
+  font-size: 12px;
+}
+
+.agent-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.agent-step {
+  padding: 8px 0;
+  border-top: 1px dashed #d1fae5;
+}
+
+.agent-step:first-of-type {
+  border-top: none;
+}
+
+.agent-step-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.agent-step-index {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: 50%;
+  background: #10b981;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.agent-step-tool {
+  color: #065f46;
+  font-weight: 600;
+}
+
+.agent-step-args {
+  margin: 4px 0 0 26px;
+  color: #334155;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.agent-step-obs {
+  overflow: hidden;
+  margin: 2px 0 0 26px;
+  color: #475569;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .trace-label {

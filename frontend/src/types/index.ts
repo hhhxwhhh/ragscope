@@ -155,6 +155,26 @@ export interface RetrievalTrace {
   created_at?: string
 }
 
+export interface AgentStep {
+  step_index: number
+  tool_name: string
+  arguments: Record<string, unknown>
+  observation: Record<string, unknown>
+  status: 'ok' | 'error' | string
+  latency_ms: number
+}
+
+export interface AgentRun {
+  id: string
+  status: string
+  stopped_reason: string | null
+  step_count: number
+  tool_calls: number
+  latency_ms: number | null
+  error: string | null
+  steps: AgentStep[]
+}
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
@@ -168,11 +188,15 @@ export interface ChatMessage {
   citations: Citation[]
   trace: RetrievalTrace | null
   feedback: MessageFeedback | null
+  agent: AgentRun | null
 }
+
+export type ChatMode = 'rag' | 'agent'
 
 export interface ChatRequest {
   question: string
   conversation_id?: string | null
+  mode?: ChatMode
 }
 
 export interface DebugRequest {

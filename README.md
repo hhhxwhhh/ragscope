@@ -15,6 +15,7 @@
 - 多查询扩展：可选用 LLM 生成 2–3 个改写问题一起召回，跨越不同表述提高召回；失败或超时会自动回退到单查询
 - Redis 检索缓存：按知识库、索引版本、完整检索配置、会话上下文和 query 做指纹，命中时跳过向量化、召回与重排；评测运行强制绕过缓存
 - 多轮问答：DeepSeek 流式输出（SSE over POST）、`[n]` 引用、来源抽屉、可中断、回答带检索 trace
+- Agentic RAG（可选模式）：单 Agent 在预算内自主调用 `search_knowledge_base` / `read_chunk_neighbors` / `get_document_outline`，把多跳、对比问题拆成多次检索；每一步的工具、参数、观测、耗时都通过 SSE 实时展示并落库，回答仍走原来的编号引用链路
 - 引用质量：每次回答统计引用标记数、有效/无效标记、命中来源数与引用率，写入 `messages.citation_stats`
 - 反馈闭环：对回答点赞 / 点踩并填写原因；点踩可一键转成评测用例（自动带入被引用 chunk 作为标注），拒答回答转成不可答案例
 - 会话管理：按标题搜索、重命名、导出 Markdown
@@ -43,6 +44,26 @@
 ```
 
 检索阶段的候选、分数、耗时都会写进 `retrieval_traces`；评测只跑这条链路到重排为止，不调用 LLM。
+
+### Agentic RAG 模式
+
+聊天页右上角可以打开「Agent 检索」。它没有引入任何 Agent 框架，而是把上面的检索 pipeline 包成一个有边界的工具循环：
+
+```text
+问题 -> LLM 规划（tools + tool_choice=auto，不流式）
+          ├─ search_knowledge_base(query, top_k)   # 复用 retrieve()，关闭多查询扩展
+          ├─ read_chunk_neighbors(chunk_id, window) # 同一文档的相邻 chunk
+          └─ get_document_outline(document_id)      # 标题结构 / chunk / 页码
+      -> 每步落库 + SSE agent_step 事件 -> 证据按 chunk_id 去重
+      -> 证据足够则停止 -> 原 grounding Prompt -> 流式回答 + [n] 引用
+```
+
+几个刻意的取舍：
+
+- **有界**：`agent_max_steps=5`、单轮决策 30s、单工具 60s（照顾 CPU 冷启动）、工具白名单和 Pydantic 参数校验；LLM 或工具失败时 fail-open，用已收集的证据继续回答，并把 `stopped_reason` 记为 `llm_error` / `max_steps` / `turn_timeout`。
+- **规划与作答分离**：循环只决定还要不要检索，不写最终答案；最终答案仍由原来的 grounded Prompt 基于去重后的证据流式生成，所以引用编号、`citation_stats`、检索 trace 与单轮模式完全一致。
+- **可观测而不是可幻觉**：落库的是工具名、参数、结构化观测（结果条数、chunk_id、预览、错误）和耗时，不保存模型思维链；前端可以展开每一步。
+- **成本可见**：默认关闭，按浏览器记住开关；每次开启会多出若干次 LLM 决策调用，适合对比/多跳问题，简单事实问题单轮 RAG 更便宜。
 
 ## 评测结果
 
@@ -86,7 +107,8 @@ rag_learn/
 │   │   ├── core/            # 配置、鉴权、依赖、错误处理
 │   │   ├── models/          # SQLAlchemy 模型，含 evaluation
 │   │   ├── rag/             # parsers, chunker, embedder, chroma, bm25, fusion,
-│   │   │                    # reranker, multi_query, retrieval_cache, pipeline
+│   │   │                    # reranker, multi_query, retrieval_cache, pipeline,
+│   │   │                    # agent/ (tools + bounded tool-calling loop)
 │   │   ├── schemas/         # Pydantic 请求/响应
 │   │   ├── services/        # 入库、检索、会话、反馈、评测、看板
 │   │   └── workers/         # 文档入库后台任务
@@ -180,7 +202,7 @@ cd backend
 .venv/Scripts/python.exe -m pytest -q
 ```
 
-- 63 个测试，`tests/unit` 覆盖解析器（Markdown / DOCX / 空白 PDF）、页码映射、切块、RRF、指标计算、JWT、多查询解析、检索缓存 key、引用统计；`tests/integration` 覆盖注册/登录/刷新轮换/登出、登录限流、知识库越权 404、评测数据集校验、后台执行器、运行对比、stale 运行恢复、反馈增删改与转评测用例、会话搜索/重命名/导出。
+- 74 个测试，`tests/unit` 覆盖解析器（Markdown / DOCX / 空白 PDF）、页码映射、切块、RRF、指标计算、JWT、多查询解析、检索缓存 key、引用统计，以及 Agent 工具参数校验、证据去重、步数预算、非法参数与模型失败时的 fail-open；`tests/integration` 覆盖注册/登录/刷新轮换/登出、登录限流、知识库越权 404、评测数据集校验、后台执行器、运行对比、stale 运行恢复、反馈增删改与转评测用例、会话搜索/重命名/导出，以及未配置 LLM key 时 Agent 接口的 503。
 - 集成测试使用独立数据库 `ragscope_test` 和 Redis DB 1；session 开始时自动建库并跑迁移，每个测试前清空表和 Redis。
 - 评测执行器测试 mock 掉 `retrieve`，CI 只装 `.[dev]`，不需要下载 torch。
 - GitHub Actions 分两个 job：后端 ruff + pytest（PostgreSQL/Redis service），前端 typecheck + build。配置在 [.github/workflows/ci.yml](.github/workflows/ci.yml)。
@@ -189,7 +211,7 @@ cd backend
 
 - [docs/architecture.md](docs/architecture.md)：请求链路、数据模型、失败恢复、扩展路径
 - [docs/evaluation.md](docs/evaluation.md)：指标定义、拒答标定、实验方法、结果解读
-- [docs/interview-questions.md](docs/interview-questions.md)：12 个模块的面试题与参考要点
+- [docs/interview-questions.md](docs/interview-questions.md)：14 个模块的面试题与参考要点
 
 ## 几个实现取舍
 
@@ -209,7 +231,7 @@ cd backend
 - 限流用 Redis 计数并在每次失败时重置窗口；没有实现分布式滑动窗口或令牌桶
 - 没有团队、RBAC 和审计日志；Chroma 为嵌入式单机模式
 - 没有 Playwright E2E，前端只做类型检查和构建验证
-- 意图识别、Agent、GraphRAG、多模态都明确不在 v1 范围内
+- Agent 是单 Agent、单轮预算内的工具循环，没有多 Agent 协作、长期记忆和自动反思；GraphRAG、多模态不在范围内
 
 ## 接下来
 

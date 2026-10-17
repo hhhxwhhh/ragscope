@@ -80,6 +80,30 @@ class FeedbackCaseOut(BaseModel):
     created: bool
 
 
+class AgentStepOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    step_index: int
+    tool_name: str
+    arguments: dict[str, Any]
+    observation: dict[str, Any]
+    status: str
+    latency_ms: int
+
+
+class AgentRunOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    status: str
+    stopped_reason: str | None
+    step_count: int
+    tool_calls: int
+    latency_ms: int | None
+    error: str | None
+    steps: list[AgentStepOut] = Field(default_factory=list)
+
+
 class MessageOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -95,11 +119,15 @@ class MessageOut(BaseModel):
     citations: list[CitationOut] = Field(default_factory=list)
     trace: RetrievalTraceOut | None = None
     feedback: FeedbackOut | None = None
+    agent: AgentRunOut | None = None
 
 
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     conversation_id: UUID | None = None
+    # "rag" is the single-shot retrieval path; "agent" runs the bounded
+    # tool-calling loop and then generates from the collected evidence.
+    mode: Literal["rag", "agent"] = "rag"
 
 
 class ChatResponse(BaseModel):

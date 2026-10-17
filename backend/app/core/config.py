@@ -77,6 +77,17 @@ class Settings(BaseSettings):
     history_messages: int = 6
     max_context_chars: int = 6000
 
+    # Agent (bounded tool-calling retrieval)
+    agent_enabled: bool = True
+    agent_max_steps: int = 5
+    agent_max_evidence: int = 10
+    agent_turn_timeout_seconds: float = 30.0
+    # Generous enough for a cold CPU embedder/reranker on the first tool call;
+    # fail-open keeps the run useful even if a tool does hit this ceiling.
+    agent_tool_timeout_seconds: float = 60.0
+    agent_temperature: float = 0.1
+    agent_decision_max_tokens: int = 512
+
     # Storage
     chroma_dir: str = str(BACKEND_DIR / "data" / "chroma")
     storage_dir: str = str(BACKEND_DIR / "data" / "storage")

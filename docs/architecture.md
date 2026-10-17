@@ -85,6 +85,29 @@ SSE 用 POST + `fetch` 而不是 `EventSource`，因为需要请求体和 `Autho
 
 多查询扩展让 LLM 生成 2–3 条不同表述的 query，每条分别走向量和 BM25，最后把所有排名一起做加权 RRF。它是一次额外的 LLM 调用，所以默认关闭、有超时（默认 8 秒），失败时回退到单查询，并在 trace 里记录 `multi_query_error`。
 
+### 3b. Agentic RAG（可选模式）
+
+```text
+POST /kbs/{id}/chat/stream  { mode: "agent" }
+  ├─ 落用户消息（短 session，立即提交）
+  ├─ 规划循环（同一短 session，最多 agent_max_steps 次工具）
+  │   ├─ LLM: tools + tool_choice=auto（非流式，单轮 30s 超时）
+  │   ├─ search_knowledge_base -> 复用 retrieve()，强制关闭 multi-query
+  │   ├─ read_chunk_neighbors -> 同文档相邻 chunk（按 kb_id 校验归属）
+  │   ├─ get_document_outline -> 标题分段、chunk 序号、页码
+  │   ├─ Pydantic 校验参数；未知工具/非法 JSON/工具异常都变成结构化 observation
+  │   └─ 每次执行: agent_steps 落库 + SSE agent_step（工具、参数、观测、耗时）
+  ├─ 证据按 chunk_id 去重，按 (最好排名, 首次出现) 排序，最多 10 条
+  ├─ 关闭 session -> 发 retrieval trace -> 原 grounded Prompt 流式回答
+  └─ 落 assistant 消息 + citations + agent_run（stopped_reason 等）
+```
+
+规划循环和最终作答是两段：循环只决定"还要不要检索"，不产出用户可见答案。这样最终回答仍然经过原来的编号引用 Prompt，`[n]`、`citation_stats`、引用抽屉和 trace 与单轮模式一致，也能避免让规划模型自由发挥导致引用编号错位。
+
+边界都在服务端：步数预算、单轮决策超时、单工具超时、工具白名单、参数校验、每 KB 的 ownership 过滤。任何一次 LLM 调用或工具失败都不直接抛给用户，而是 fail-open：带着已收集的证据继续作答，把原因写进 `agent_runs.stopped_reason`（`max_steps` / `turn_timeout` / `llm_error`）。前端右上角开关按浏览器记住，默认关闭。
+
+落库的是结构化步骤，而不是思维链：工具名、经过校验的参数、观测摘要、状态、耗时。这既够前端还原"它查了什么、为什么查不到"，又不会把模型的内部推理写进数据库。
+
 ### 4. 评测运行
 
 ```text
@@ -136,6 +159,7 @@ assistant 消息落库时会计算 `citation_stats`：解析回答里的 `[n]`�
 | `citations` | 引用排名、分数、片段、页码；chunk 删除后置空 |
 | `message_feedbacks` | 一条消息最多一条反馈；`rating ∈ {-1, 1}` + 原因 + 备注 |
 | `retrieval_traces` | 改写 query、`sub_queries`、`cache_hit`、四阶段候选、分阶段耗时、配置快照 |
+| `agent_runs` / `agent_steps` | 一条 assistant 消息对应一次 run；`stopped_reason` 记录终止原因；step 存取工具名、参数、结构化观测、状态与耗时，按 `(run_id, step_index)` 唯一 |
 | `eval_datasets` / `eval_cases` | 数据集快照切块参数；用例标注到 chunk 级 |
 | `eval_runs` / `eval_results` | 运行快照配置与索引版本；结果快照问题与标注 |
 
@@ -186,6 +210,9 @@ embedding 在写事务外完成；SSE 流式期间不持有 session；评测执�
 | 进程在评测中重启 | run 卡在 pending/running | 启动时标记 failed，可重新发起 |
 | reranker 超时/异常 | 回退 RRF 顺序，trace 标记降级 | 不失败，只损失排序质量 |
 | 多查询扩展失败/超时 | 回退单查询，trace 记录 `multi_query_error` | 不失败；可关闭该配置 |
+| Agent 工具超时/异常 | 该步记为 error，继续下一步或直接作答 | fail-open；`stopped_reason` 记录原因 |
+| Agent LLM 决策失败 | 带着已收集证据生成回答 | fail-open；`stopped_reason=llm_error` |
+| Agent 达到步数预算 | 停止规划，用现有证据作答 | `stopped_reason=max_steps`，可调大预算 |
 | 检索缓存读写失败 | 按未命中处理，继续走真实检索 | 不失败；Redis 恢复后自动重新使用 |
 | Redis 不可用（鉴权） | 登录/刷新失败 | 恢复 Redis；鉴权不降级放行 |
 | Chroma 不可用 | readyz 503，检索报错 | 恢复后重试；/readyz 可被编排系统使用 |

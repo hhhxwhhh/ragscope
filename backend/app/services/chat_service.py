@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.errors import NotFoundError
 from app.db.session import SessionLocal
+from app.models.agent import AgentRun, AgentStep
 from app.models.citation import Citation
 from app.models.conversation import Conversation
 from app.models.feedback import MessageFeedback
@@ -23,7 +24,14 @@ from app.models.retrieval_trace import RetrievalTrace
 from app.rag.llm import get_llm_client
 from app.rag.pipeline import RetrievalOutcome, retrieve
 from app.rag.prompt import build_llm_messages, citation_stats, extract_citation_ranks
-from app.schemas.chat import CitationOut, FeedbackOut, MessageOut, RetrievalTraceOut
+from app.schemas.chat import (
+    AgentRunOut,
+    AgentStepOut,
+    CitationOut,
+    FeedbackOut,
+    MessageOut,
+    RetrievalTraceOut,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +45,21 @@ class MessageBundle:
     citations: list[Citation]
     trace: RetrievalTrace | None
     feedback: MessageFeedback | None = None
+    agent_run: AgentRun | None = None
+    agent_steps: list[AgentStep] | None = None
+
+
+@dataclass
+class AgentPersistence:
+    """Serializable agent outcome handed to the message writer."""
+
+    stopped_reason: str | None
+    steps: list[dict[str, Any]]
+    step_count: int
+    tool_calls: int
+    latency_ms: int
+    token_usage: dict[str, Any] | None
+    error: str | None = None
 
 
 def to_message_out(bundle: MessageBundle) -> MessageOut:
@@ -44,6 +67,19 @@ def to_message_out(bundle: MessageBundle) -> MessageOut:
     out.citations = [CitationOut.model_validate(citation) for citation in bundle.citations]
     out.trace = RetrievalTraceOut.model_validate(bundle.trace) if bundle.trace is not None else None
     out.feedback = FeedbackOut.model_validate(bundle.feedback) if bundle.feedback else None
+    if bundle.agent_run is not None:
+        out.agent = AgentRunOut(
+            id=bundle.agent_run.id,
+            status=bundle.agent_run.status,
+            stopped_reason=bundle.agent_run.stopped_reason,
+            step_count=bundle.agent_run.step_count,
+            tool_calls=bundle.agent_run.tool_calls,
+            latency_ms=bundle.agent_run.latency_ms,
+            error=bundle.agent_run.error,
+            steps=[
+                AgentStepOut.model_validate(step) for step in (bundle.agent_steps or [])
+            ],
+        )
     return out
 
 
@@ -250,22 +286,44 @@ async def list_messages(
             select(MessageFeedback).where(MessageFeedback.message_id.in_(message_ids))
         )
     ).all()
+    agent_runs = (
+        await db.scalars(select(AgentRun).where(AgentRun.message_id.in_(message_ids)))
+    ).all()
+    agent_steps: list[AgentStep] = []
+    if agent_runs:
+        agent_steps = list(
+            (
+                await db.scalars(
+                    select(AgentStep)
+                    .where(AgentStep.run_id.in_([run.id for run in agent_runs]))
+                    .order_by(AgentStep.run_id, AgentStep.step_index)
+                )
+            ).all()
+        )
 
     citations_by_message: dict[UUID, list[Citation]] = {}
     for citation in citations:
         citations_by_message.setdefault(citation.message_id, []).append(citation)
     trace_by_message = {trace.message_id: trace for trace in traces}
     feedback_by_message = {feedback.message_id: feedback for feedback in feedbacks}
+    run_by_message = {run.message_id: run for run in agent_runs}
+    steps_by_run: dict[UUID, list[AgentStep]] = {}
+    for step in agent_steps:
+        steps_by_run.setdefault(step.run_id, []).append(step)
 
-    bundles = [
-        MessageBundle(
-            message=message,
-            citations=citations_by_message.get(message.id, []),
-            trace=trace_by_message.get(message.id),
-            feedback=feedback_by_message.get(message.id),
+    bundles = []
+    for message in messages:
+        run = run_by_message.get(message.id)
+        bundles.append(
+            MessageBundle(
+                message=message,
+                citations=citations_by_message.get(message.id, []),
+                trace=trace_by_message.get(message.id),
+                feedback=feedback_by_message.get(message.id),
+                agent_run=run,
+                agent_steps=steps_by_run.get(run.id, []) if run is not None else [],
+            )
         )
-        for message in messages
-    ]
     return bundles, int(total or 0)
 
 
@@ -318,6 +376,7 @@ async def _save_assistant_message(
     status: str,
     latency_ms: int | None,
     usage: dict[str, Any] | None,
+    agent: AgentPersistence | None = None,
 ) -> MessageBundle:
     message = Message(
         conversation_id=conversation.id,
@@ -356,11 +415,40 @@ async def _save_assistant_message(
         )
         db.add(trace_row)
 
+    agent_run: AgentRun | None = None
+    agent_steps: list[AgentStep] = []
+    if agent is not None:
+        agent_run = AgentRun(
+            message_id=message.id,
+            kb_id=conversation.kb_id,
+            question=question,
+            status=status,
+            stopped_reason=agent.stopped_reason,
+            step_count=agent.step_count,
+            tool_calls=agent.tool_calls,
+            latency_ms=agent.latency_ms,
+            token_usage=agent.token_usage,
+            error=agent.error,
+        )
+        db.add(agent_run)
+        await db.flush()
+        for step in agent.steps:
+            row = AgentStep(run_id=agent_run.id, **step)
+            db.add(row)
+            agent_steps.append(row)
+        await db.flush()
+
     conversation.last_message_at = datetime.now(UTC)
     if conversation.title in {"", DEFAULT_TITLE}:
         conversation.title = question[:60]
     await db.flush()
-    return MessageBundle(message=message, citations=citations, trace=trace_row)
+    return MessageBundle(
+        message=message,
+        citations=citations,
+        trace=trace_row,
+        agent_run=agent_run,
+        agent_steps=agent_steps,
+    )
 
 
 def _llm_payload(messages: list[dict[str, str]], *, stream: bool) -> dict[str, Any]:
@@ -519,3 +607,64 @@ async def save_streamed_answer(
 
 def llm_stream_payload(messages: list[dict[str, str]]) -> dict[str, Any]:
     return _llm_payload(messages, stream=True)
+
+
+def llm_payload(messages: list[dict[str, str]], *, stream: bool) -> dict[str, Any]:
+    return _llm_payload(messages, stream=stream)
+
+
+async def save_agent_answer_in_session(
+    db: AsyncSession,
+    conversation: Conversation,
+    *,
+    question: str,
+    content: str,
+    outcome: RetrievalOutcome | None,
+    agent: AgentPersistence,
+    status: str,
+    latency_ms: int,
+    usage: dict[str, Any] | None,
+) -> MessageBundle:
+    """Write an agent answer using the caller's transaction."""
+    return await _save_assistant_message(
+        db,
+        conversation,
+        question=question,
+        content=content,
+        outcome=outcome,
+        status=status,
+        latency_ms=latency_ms,
+        usage=usage,
+        agent=agent,
+    )
+
+
+async def save_answer_with_agent(
+    conversation_id: UUID,
+    *,
+    question: str,
+    content: str,
+    outcome: RetrievalOutcome | None,
+    agent: AgentPersistence,
+    status: str,
+    latency_ms: int,
+    usage: dict[str, Any] | None,
+) -> MessageBundle | None:
+    """Persist a streamed agent answer in a fresh session."""
+    async with SessionLocal() as db:
+        conversation = await db.get(Conversation, conversation_id)
+        if conversation is None:
+            return None
+        bundle = await _save_assistant_message(
+            db,
+            conversation,
+            question=question,
+            content=content,
+            outcome=outcome,
+            status=status,
+            latency_ms=latency_ms,
+            usage=usage,
+            agent=agent,
+        )
+        await db.commit()
+        return bundle

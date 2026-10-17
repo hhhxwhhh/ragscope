@@ -1,6 +1,8 @@
 import { api, tokenStorage } from './client'
 import type {
+  AgentStep,
   ChatMessage,
+  ChatMode,
   ChatRequest,
   Conversation,
   DebugRequest,
@@ -88,6 +90,7 @@ export async function debugRetrieval(kbId: string, payload: DebugRequest): Promi
 export interface StreamMeta {
   conversation_id: string
   user_message_id: string
+  mode?: ChatMode
   rewritten_query: string
   rewrite_applied: boolean
   reranked: boolean
@@ -96,6 +99,7 @@ export interface StreamMeta {
 export interface StreamHandlers {
   onMeta?: (meta: StreamMeta) => void
   onRetrieval?: (trace: RetrievalTrace) => void
+  onAgentStep?: (step: AgentStep) => void
   onToken?: (delta: string) => void
   onDone?: (message: ChatMessage | null) => void
   onError?: (detail: string) => void
@@ -197,6 +201,9 @@ function dispatchFrame(frame: string, handlers: StreamHandlers): void {
       break
     case 'retrieval':
       handlers.onRetrieval?.(data as RetrievalTrace)
+      break
+    case 'agent_step':
+      handlers.onAgentStep?.(data as AgentStep)
       break
     case 'token':
       handlers.onToken?.((data as { delta: string }).delta)

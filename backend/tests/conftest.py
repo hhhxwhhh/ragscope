@@ -52,6 +52,8 @@ from app.main import app  # noqa: E402
 settings = get_settings()
 
 TABLES = (
+    "agent_steps",
+    "agent_runs",
     "eval_results",
     "eval_runs",
     "eval_cases",

@@ -1,3 +1,4 @@
+from app.models.agent import AgentRun, AgentStep
 from app.models.chunk import Chunk
 from app.models.citation import Citation
 from app.models.conversation import Conversation
@@ -15,6 +16,8 @@ from app.models.retrieval_trace import RetrievalTrace
 from app.models.user import User
 
 __all__ = [
+    "AgentRun",
+    "AgentStep",
     "Chunk",
     "Citation",
     "Conversation",
