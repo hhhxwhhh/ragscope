@@ -59,6 +59,7 @@ export interface DocumentItem {
   error_stage: string | null
   error_message: string | null
   chunk_count: number
+  page_count: number | null
   indexed_at: string | null
   created_at: string
 }
@@ -88,10 +89,36 @@ export interface Citation {
   filename: string
   chunk_index: number
   heading_path: string | null
+  page_number: number | null
   rank: number
   score: number | null
   snippet: string
   cited: boolean
+}
+
+export interface MessageFeedback {
+  id: string
+  message_id: string
+  rating: -1 | 1
+  reason: string | null
+  comment: string | null
+  updated_at: string
+}
+
+export interface CitationStats {
+  markers: number
+  valid_markers: number
+  invalid_markers: number
+  source_count: number
+  cited_sources: number
+  citation_rate: number
+}
+
+export interface FeedbackCaseResult {
+  dataset_id: string
+  dataset_name: string
+  case_id: string
+  created: boolean
 }
 
 export interface TraceCandidate {
@@ -100,6 +127,7 @@ export interface TraceCandidate {
   filename: string
   chunk_index: number
   heading_path: string | null
+  page_number?: number | null
   content: string
   vector_score?: number | null
   bm25_score?: number | null
@@ -107,6 +135,7 @@ export interface TraceCandidate {
   bm25_rank?: number | null
   fused_score?: number | null
   rerank_score?: number | null
+  matched_queries?: number[] | null
 }
 
 export interface RetrievalTrace {
@@ -115,6 +144,8 @@ export interface RetrievalTrace {
   rewritten_query: string
   rewrite_applied: boolean
   rewrite_error?: string | null
+  sub_queries?: string[]
+  cache_hit?: boolean
   reranked: boolean
   rerank_error?: string | null
   config: Record<string, unknown>
@@ -131,10 +162,12 @@ export interface ChatMessage {
   status: 'streaming' | 'completed' | 'failed' | 'cancelled'
   latency_ms: number | null
   token_usage: Record<string, number> | null
+  citation_stats: CitationStats | null
   rewrite_query: string | null
   created_at: string
   citations: Citation[]
   trace: RetrievalTrace | null
+  feedback: MessageFeedback | null
 }
 
 export interface ChatRequest {
@@ -152,6 +185,10 @@ export interface DebugResponse {
   rewritten_query: string
   rewrite_applied: boolean
   rewrite_error: string | null
+  sub_queries: string[]
+  multi_query_applied: boolean
+  multi_query_error: string | null
+  cache_hit: boolean
   reranked: boolean
   rerank_error: string | null
   config: Record<string, unknown>
@@ -304,6 +341,11 @@ export interface DashboardSummary {
   eval_case_count: number
   eval_run_count: number
   avg_latency_ms: number
+  feedback_positive: number
+  feedback_negative: number
+  feedback_positive_rate: number
+  avg_citation_rate: number
+  invalid_citation_markers: number
   recent_runs: RecentRun[]
 }
 

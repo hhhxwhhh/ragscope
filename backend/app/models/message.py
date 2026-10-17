@@ -34,5 +34,8 @@ class Message(Base):
     status: Mapped[str] = mapped_column(String(20), default="completed", server_default="completed")
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     token_usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    # Marker/source counts computed server-side, e.g.
+    # {"markers": 4, "invalid_markers": 0, "cited_sources": 3, "citation_rate": 0.6}
+    citation_stats: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     rewrite_query: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

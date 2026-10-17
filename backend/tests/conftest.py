@@ -39,6 +39,8 @@ os.environ.update(
         "EMBEDDING_DEVICE": "cpu",
         "RERANK_ENABLED": "false",
         "QUERY_REWRITE_ENABLED": "false",
+        "MULTI_QUERY_ENABLED": "false",
+        "RETRIEVAL_CACHE_ENABLED": "false",
     }
 )
 
@@ -54,6 +56,7 @@ TABLES = (
     "eval_runs",
     "eval_cases",
     "eval_datasets",
+    "message_feedbacks",
     "citations",
     "messages",
     "conversations",

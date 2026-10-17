@@ -28,6 +28,7 @@ class Citation(Base):
     filename: Mapped[str] = mapped_column(String(255))
     chunk_index: Mapped[int] = mapped_column(Integer)
     heading_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rank: Mapped[int] = mapped_column(Integer)
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
     snippet: Mapped[str] = mapped_column(Text)

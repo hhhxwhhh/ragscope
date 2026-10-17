@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -24,6 +24,11 @@ class RetrievalTrace(Base):
     query: Mapped[str] = mapped_column(Text)
     rewritten_query: Mapped[str] = mapped_column(Text)
     rewrite_applied: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # LLM-generated retrieval angles (empty unless multi-query was enabled).
+    sub_queries: Mapped[list[str]] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'::jsonb")
+    )
+    cache_hit: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     reranked: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     rerank_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
     config: Mapped[dict[str, Any]] = mapped_column(JSONB)

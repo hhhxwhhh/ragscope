@@ -5,7 +5,14 @@ import * as echarts from 'echarts/core'
 import { LineChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import { Collection, DataAnalysis, Document, Histogram } from '@element-plus/icons-vue'
+import {
+  Collection,
+  DataAnalysis,
+  Document,
+  Histogram,
+  Link,
+  Star,
+} from '@element-plus/icons-vue'
 
 echarts.use([LineChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
 
@@ -61,6 +68,20 @@ const kpis = computed(() => {
       hint: '用例数 / 运行次数',
       icon: Histogram,
       color: '#d97706',
+    },
+    {
+      label: '用户满意度',
+      value: formatPct(data?.feedback_positive_rate ?? null),
+      hint: `${data?.feedback_positive ?? 0} 赞 / ${data?.feedback_negative ?? 0} 踩`,
+      icon: Star,
+      color: '#db2777',
+    },
+    {
+      label: '引用有效率',
+      value: formatPct(data?.avg_citation_rate ?? null),
+      hint: `${data?.invalid_citation_markers ?? 0} 个无效引用标记`,
+      icon: Link,
+      color: '#7c3aed',
     },
   ]
 })

@@ -44,6 +44,30 @@ def test_drops_chunks_shorter_than_minimum() -> None:
     assert build_chunks("# 标题\n\n太短了", chunk_size=400, chunk_overlap=0) == []
 
 
+def test_chunks_inherit_page_from_character_offset() -> None:
+    page_one = "第一页的内容会重复一些描述，用来验证页码映射是否正确，确保切块长度超过最小限制。"
+    page_two = "第二页的内容同样需要足够长才能形成切块，并且验证字符偏移落在第二页的范围内。"
+    text = f"{page_one}\n\n{page_two}"
+    page_two_start = len(page_one) + 2
+
+    chunks = build_chunks(
+        text,
+        chunk_size=40,
+        chunk_overlap=0,
+        page_starts=[(0, 1), (page_two_start, 2)],
+    )
+
+    assert [chunk.page_number for chunk in chunks] == [1, 2]
+    assert chunks[1].char_start >= page_two_start
+
+
+def test_text_without_page_map_has_no_page_numbers() -> None:
+    text = "没有页码映射的纯文本内容，切块以后页码字段应当为空，这样文本格式的文档也能正常入库。"
+    chunks = build_chunks(text, chunk_size=400, chunk_overlap=0)
+
+    assert chunks[0].page_number is None
+
+
 def test_multiple_heading_levels_are_tracked() -> None:
     text = (
         "# 一级\n\n"

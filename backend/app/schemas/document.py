@@ -16,6 +16,7 @@ class DocumentOut(BaseModel):
     error_stage: str | None
     error_message: str | None
     chunk_count: int
+    page_count: int | None = None
     indexed_at: datetime | None
     created_at: datetime
 

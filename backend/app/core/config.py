@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     min_vector_score: float = 0.45
     query_rewrite_enabled: bool = True
     query_rewrite_timeout_seconds: float = 8.0
+    multi_query_enabled: bool = False
+    multi_query_count: int = 3
+    multi_query_timeout_seconds: float = 8.0
+    retrieval_cache_enabled: bool = True
+    retrieval_cache_ttl_seconds: int = 300
 
     # Chat
     llm_timeout_seconds: float = 60.0

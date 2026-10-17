@@ -246,14 +246,16 @@ onUnmounted(stopPolling)
             :show-file-list="false"
             :http-request="handleUpload"
             :disabled="uploading"
-            accept=".md,.txt"
+            accept=".md,.txt,.pdf,.docx"
           >
             <el-icon class="upload-icon"><UploadFilled /></el-icon>
             <div class="el-upload__text">
-              拖拽 .md / .txt 到这里，或 <em>点击选择</em>
+              拖拽 .md / .txt / .pdf / .docx 到这里，或 <em>点击选择</em>
             </div>
             <template #tip>
-              <div class="el-upload__tip">单文件不超过 5 MB，同一知识库内按内容去重</div>
+              <div class="el-upload__tip">
+                单文件不超过 5 MB；PDF 会保留页码，扫描件需先做 OCR
+              </div>
             </template>
           </el-upload>
 
@@ -283,7 +285,12 @@ onUnmounted(stopPolling)
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="chunk_count" label="Chunk 数" width="100" />
+            <el-table-column label="Chunk / 页" width="120">
+              <template #default="{ row }">
+                {{ row.chunk_count }}
+                <span v-if="row.page_count" class="muted">/ {{ row.page_count }} 页</span>
+              </template>
+            </el-table-column>
             <el-table-column label="上传时间" width="180">
               <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
             </el-table-column>
@@ -305,7 +312,7 @@ onUnmounted(stopPolling)
 
           <el-empty
             v-if="!loading && !documents.length"
-            description="还没有文档，上传一篇 .md 或 .txt 开始"
+            description="还没有文档，上传一篇 Markdown、TXT、PDF 或 DOCX 开始"
           />
         </el-tab-pane>
 

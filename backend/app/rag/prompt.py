@@ -67,3 +67,27 @@ def extract_citation_ranks(answer: str, candidate_count: int) -> set[int]:
         if 1 <= rank <= candidate_count:
             ranks.add(rank)
     return ranks
+
+
+def citation_stats(
+    answer: str,
+    candidate_count: int,
+    cited_ranks: set[int],
+) -> dict[str, float | int]:
+    """Deterministic citation validity signals, stored per assistant message.
+
+    ``invalid_markers`` counts ``[n]`` references outside the retrieved source
+    range — a cheap hallucination signal that needs no LLM judge.
+    """
+    markers = [int(match) for match in _CITATION_RE.findall(answer)]
+    valid = sum(1 for rank in markers if 1 <= rank <= candidate_count)
+    return {
+        "markers": len(markers),
+        "valid_markers": valid,
+        "invalid_markers": len(markers) - valid,
+        "source_count": candidate_count,
+        "cited_sources": len(cited_ranks),
+        "citation_rate": (
+            round(len(cited_ranks) / candidate_count, 4) if candidate_count else 0.0
+        ),
+    }

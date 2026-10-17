@@ -26,6 +26,11 @@ class DashboardSummary(BaseModel):
     eval_case_count: int
     eval_run_count: int
     avg_latency_ms: float
+    feedback_positive: int
+    feedback_negative: int
+    feedback_positive_rate: float
+    avg_citation_rate: float
+    invalid_citation_markers: int
     recent_runs: list[RecentRunOut]
 
 

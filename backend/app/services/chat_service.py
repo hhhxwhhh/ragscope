@@ -16,13 +16,14 @@ from app.core.errors import NotFoundError
 from app.db.session import SessionLocal
 from app.models.citation import Citation
 from app.models.conversation import Conversation
+from app.models.feedback import MessageFeedback
 from app.models.knowledge_base import KnowledgeBase
 from app.models.message import Message, MessageRole, MessageStatus
 from app.models.retrieval_trace import RetrievalTrace
 from app.rag.llm import get_llm_client
 from app.rag.pipeline import RetrievalOutcome, retrieve
-from app.rag.prompt import build_llm_messages, extract_citation_ranks
-from app.schemas.chat import CitationOut, MessageOut, RetrievalTraceOut
+from app.rag.prompt import build_llm_messages, citation_stats, extract_citation_ranks
+from app.schemas.chat import CitationOut, FeedbackOut, MessageOut, RetrievalTraceOut
 
 logger = logging.getLogger(__name__)
 
@@ -35,13 +36,53 @@ class MessageBundle:
     message: Message
     citations: list[Citation]
     trace: RetrievalTrace | None
+    feedback: MessageFeedback | None = None
 
 
 def to_message_out(bundle: MessageBundle) -> MessageOut:
     out = MessageOut.model_validate(bundle.message)
     out.citations = [CitationOut.model_validate(citation) for citation in bundle.citations]
     out.trace = RetrievalTraceOut.model_validate(bundle.trace) if bundle.trace is not None else None
+    out.feedback = FeedbackOut.model_validate(bundle.feedback) if bundle.feedback else None
     return out
+
+
+async def get_owned_message(
+    db: AsyncSession,
+    message_id: UUID,
+    user_id: UUID,
+) -> Message:
+    message = await db.scalar(
+        select(Message)
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .join(KnowledgeBase, Conversation.kb_id == KnowledgeBase.id)
+        .where(
+            Message.id == message_id,
+            Conversation.user_id == user_id,
+            KnowledgeBase.owner_id == user_id,
+        )
+    )
+    if message is None:
+        raise NotFoundError("消息不存在")
+    return message
+
+
+async def get_previous_user_message(
+    db: AsyncSession,
+    message: Message,
+) -> Message | None:
+    """Find the question that produced an assistant answer."""
+    return await db.scalar(
+        select(Message)
+        .where(
+            Message.conversation_id == message.conversation_id,
+            Message.role == MessageRole.USER,
+            Message.created_at <= message.created_at,
+            Message.id != message.id,
+        )
+        .order_by(Message.created_at.desc(), Message.id.desc())
+        .limit(1)
+    )
 
 
 async def get_owned_conversation(
@@ -69,8 +110,11 @@ async def list_conversations(
     user_id: UUID,
     offset: int,
     limit: int,
+    q: str | None = None,
 ) -> tuple[list[Conversation], int]:
     condition = (Conversation.kb_id == kb_id) & (Conversation.user_id == user_id)
+    if q and q.strip():
+        condition = condition & Conversation.title.ilike(f"%{q.strip()}%")
     items = (
         await db.scalars(
             select(Conversation)
@@ -118,6 +162,32 @@ async def ensure_conversation(
 
 async def delete_conversation(db: AsyncSession, conversation: Conversation) -> None:
     await db.delete(conversation)
+
+
+async def export_conversation_markdown(db: AsyncSession, conversation: Conversation) -> str:
+    """Render a conversation as Markdown for sharing / offline review."""
+    bundles, _ = await list_messages(db, conversation.id, 0, 1000)
+    lines = [f"# {conversation.title}", ""]
+    for bundle in bundles:
+        message = bundle.message
+        role = "用户" if message.role == MessageRole.USER else "助手"
+        lines.append(f"## {role}")
+        lines.append("")
+        lines.append(message.content or "（空）")
+        lines.append("")
+        if message.role == MessageRole.ASSISTANT and bundle.citations:
+            lines.append("**引用来源**")
+            lines.append("")
+            for citation in bundle.citations:
+                page = f" · 第 {citation.page_number} 页" if citation.page_number else ""
+                marker = "" if citation.cited else "（未在回答中引用）"
+                lines.append(
+                    f"- [{citation.rank}] {citation.filename} · "
+                    f"{citation.heading_path or '无标题'} · chunk #{citation.chunk_index}"
+                    f"{page}{marker}"
+                )
+            lines.append("")
+    return "\n".join(lines).strip() + "\n"
 
 
 async def get_history(
@@ -175,17 +245,24 @@ async def list_messages(
     traces = (
         await db.scalars(select(RetrievalTrace).where(RetrievalTrace.message_id.in_(message_ids)))
     ).all()
+    feedbacks = (
+        await db.scalars(
+            select(MessageFeedback).where(MessageFeedback.message_id.in_(message_ids))
+        )
+    ).all()
 
     citations_by_message: dict[UUID, list[Citation]] = {}
     for citation in citations:
         citations_by_message.setdefault(citation.message_id, []).append(citation)
     trace_by_message = {trace.message_id: trace for trace in traces}
+    feedback_by_message = {feedback.message_id: feedback for feedback in feedbacks}
 
     bundles = [
         MessageBundle(
             message=message,
             citations=citations_by_message.get(message.id, []),
             trace=trace_by_message.get(message.id),
+            feedback=feedback_by_message.get(message.id),
         )
         for message in messages
     ]
@@ -195,9 +272,8 @@ async def list_messages(
 def _build_citations(
     message_id: UUID,
     candidates: list[dict[str, Any]],
-    answer: str,
+    cited_ranks: set[int],
 ) -> list[Citation]:
-    cited_ranks = extract_citation_ranks(answer, len(candidates))
     rows: list[Citation] = []
     for rank, candidate in enumerate(candidates, start=1):
         score = candidate.get("rerank_score")
@@ -211,6 +287,11 @@ def _build_citations(
                 filename=candidate.get("filename") or "",
                 chunk_index=int(candidate.get("chunk_index") or 0),
                 heading_path=candidate.get("heading_path"),
+                page_number=(
+                    int(candidate["page_number"])
+                    if candidate.get("page_number") is not None
+                    else None
+                ),
                 rank=rank,
                 score=float(score) if score is not None else None,
                 snippet=(candidate.get("content") or "")[:600],
@@ -253,7 +334,9 @@ async def _save_assistant_message(
     citations: list[Citation] = []
     trace_row: RetrievalTrace | None = None
     if outcome is not None:
-        citations = _build_citations(message.id, outcome.candidates, content)
+        cited_ranks = extract_citation_ranks(content, len(outcome.candidates))
+        message.citation_stats = citation_stats(content, len(outcome.candidates), cited_ranks)
+        citations = _build_citations(message.id, outcome.candidates, cited_ranks)
         if citations:
             db.add_all(citations)
         trace = outcome.trace
@@ -263,6 +346,8 @@ async def _save_assistant_message(
             query=trace["query"],
             rewritten_query=trace["rewritten_query"],
             rewrite_applied=bool(trace.get("rewrite_applied")),
+            sub_queries=list(trace.get("sub_queries") or []),
+            cache_hit=bool(trace.get("cache_hit")),
             reranked=bool(trace.get("reranked")),
             rerank_error=trace.get("rerank_error"),
             config=trace.get("config") or {},

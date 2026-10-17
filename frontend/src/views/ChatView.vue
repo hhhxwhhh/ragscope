@@ -2,16 +2,29 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, Plus } from '@element-plus/icons-vue'
+import {
+  CaretBottom,
+  CaretTop,
+  Delete,
+  Download,
+  EditPen,
+  Plus,
+  Search,
+} from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 
 import { getKb } from '@/api/kb'
 import {
+  convertFeedbackToCase,
   deleteConversation,
+  deleteFeedback,
+  exportConversation,
   listConversations,
   listMessages,
+  renameConversation,
   streamChat,
+  upsertFeedback,
 } from '@/api/chat'
 import type {
   ChatMessage,
@@ -41,7 +54,27 @@ const activeCitations = ref<Citation[]>([])
 const activeCitationRank = ref<number | null>(null)
 const expandedTraces = reactive(new Set<string>())
 
+const conversationQuery = ref('')
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+
+const feedbackDialogVisible = ref(false)
+const feedbackTarget = ref<ChatMessage | null>(null)
+const feedbackReason = ref('incorrect')
+const feedbackComment = ref('')
+const feedbackSaving = ref(false)
+
+const feedbackReasons = [
+  { value: 'incorrect', label: '答案不正确' },
+  { value: 'outdated', label: '资料过时' },
+  { value: 'incomplete', label: '回答不完整' },
+  { value: 'citation', label: '引用有问题' },
+  { value: 'other', label: '其他原因' },
+]
+
 const activeConversationId = computed(() => props.conversationId || '')
+const activeConversation = computed(
+  () => conversations.value.find((item) => item.id === activeConversationId.value) || null,
+)
 const sampleQuestions = [
   'X1 的续航是多久？',
   'X2 和 X1 有什么区别？',
@@ -108,8 +141,17 @@ async function loadKb(): Promise<void> {
 }
 
 async function loadConversations(): Promise<void> {
-  const page = await listConversations(props.id)
+  const page = await listConversations(props.id, 0, 50, conversationQuery.value.trim() || undefined)
   conversations.value = page.items
+}
+
+function onSearchInput(): void {
+  if (searchTimer) {
+    clearTimeout(searchTimer)
+  }
+  searchTimer = setTimeout(() => {
+    loadConversations().catch(() => undefined)
+  }, 250)
 }
 
 async function loadMessages(): Promise<void> {
@@ -135,10 +177,12 @@ function makeLocalMessage(role: 'user' | 'assistant', content: string): ChatMess
     status: role === 'assistant' ? 'streaming' : 'completed',
     latency_ms: null,
     token_usage: null,
+    citation_stats: null,
     rewrite_query: null,
     created_at: new Date().toISOString(),
     citations: [],
     trace: null,
+    feedback: null,
   }
 }
 
@@ -256,6 +300,110 @@ async function removeConversation(conversation: Conversation): Promise<void> {
   await loadConversations()
 }
 
+async function renameConversationPrompt(conversation: Conversation): Promise<void> {
+  try {
+    const { value } = await ElMessageBox.prompt('输入新的会话名称', '重命名会话', {
+      inputValue: conversation.title,
+      confirmButtonText: '保存',
+      cancelButtonText: '取消',
+      inputPattern: /\S+/,
+      inputErrorMessage: '名称不能为空',
+    })
+    const updated = await renameConversation(conversation.id, value.trim())
+    const index = conversations.value.findIndex((item) => item.id === conversation.id)
+    if (index >= 0) {
+      conversations.value[index] = updated
+    }
+  } catch {
+    // Cancelled by the user, or the axios interceptor already showed the error.
+  }
+}
+
+async function downloadConversation(): Promise<void> {
+  if (!activeConversation.value) {
+    return
+  }
+  const blob = await exportConversation(activeConversation.value.id)
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${activeConversation.value.title || 'conversation'}.md`
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+function canRate(message: ChatMessage): boolean {
+  return (
+    message.role === 'assistant' &&
+    !message.id.startsWith('local-') &&
+    (message.status === 'completed' || message.status === 'cancelled')
+  )
+}
+
+async function rateMessage(message: ChatMessage, rating: -1 | 1): Promise<void> {
+  if (!canRate(message)) {
+    return
+  }
+  if (message.feedback?.rating === rating) {
+    await deleteFeedback(message.id)
+    message.feedback = null
+    return
+  }
+  if (rating === 1) {
+    message.feedback = await upsertFeedback(message.id, { rating: 1 })
+    ElMessage.success('已记录评价')
+    return
+  }
+  feedbackTarget.value = message
+  feedbackReason.value = 'incorrect'
+  feedbackComment.value = message.feedback?.comment || ''
+  feedbackDialogVisible.value = true
+}
+
+async function saveNegativeFeedback(): Promise<void> {
+  const message = feedbackTarget.value
+  if (!message) {
+    return
+  }
+  feedbackSaving.value = true
+  try {
+    message.feedback = await upsertFeedback(message.id, {
+      rating: -1,
+      reason: feedbackReason.value,
+      comment: feedbackComment.value.trim() || null,
+    })
+    feedbackDialogVisible.value = false
+    ElMessage.success('已记录差评，可一键转为评测用例')
+  } finally {
+    feedbackSaving.value = false
+  }
+}
+
+async function makeEvalCase(message: ChatMessage): Promise<void> {
+  const result = await convertFeedbackToCase(message.id)
+  ElMessage.success(
+    result.created
+      ? `已加入评测集「${result.dataset_name}」`
+      : `该问题已存在于「${result.dataset_name}」`,
+  )
+}
+
+function citationSummary(message: ChatMessage): string {
+  const stats = message.citation_stats
+  if (!stats) {
+    return ''
+  }
+  const parts = [`引用 ${stats.cited_sources}/${stats.source_count}`]
+  if (stats.invalid_markers > 0) {
+    parts.push(`越界标记 ${stats.invalid_markers}`)
+  }
+  return parts.join(' · ')
+}
+
+function feedbackReasonLabel(value: string | null): string {
+  return feedbackReasons.find((item) => item.value === value)?.label || '其他原因'
+}
+
 function useSample(question: string): void {
   input.value = question
 }
@@ -317,6 +465,19 @@ onMounted(scrollToBottom)
         <el-button type="primary" :icon="Plus" class="new-chat" @click="startNewChat">
           新对话
         </el-button>
+        <el-input
+          v-model="conversationQuery"
+          class="conv-search"
+          size="small"
+          placeholder="搜索会话"
+          clearable
+          @input="onSearchInput"
+          @clear="loadConversations"
+        >
+          <template #prefix>
+            <el-icon><Search /></el-icon>
+          </template>
+        </el-input>
       </div>
 
       <div class="conv-list">
@@ -329,11 +490,18 @@ onMounted(scrollToBottom)
         >
           <span class="conv-title">{{ conversation.title }}</span>
           <span class="conv-time">{{ formatTime(conversation.last_message_at) }}</span>
-          <el-icon class="conv-delete" @click.stop="removeConversation(conversation)">
-            <Delete />
-          </el-icon>
+          <span class="conv-actions">
+            <el-icon title="重命名" @click.stop="renameConversationPrompt(conversation)">
+              <EditPen />
+            </el-icon>
+            <el-icon title="删除" @click.stop="removeConversation(conversation)">
+              <Delete />
+            </el-icon>
+          </span>
         </button>
-        <div v-if="!conversations.length" class="conv-empty muted">还没有对话</div>
+        <div v-if="!conversations.length" class="conv-empty muted">
+          {{ conversationQuery ? '没有匹配的会话' : '还没有对话' }}
+        </div>
       </div>
 
       <div class="conv-foot">
@@ -353,7 +521,17 @@ onMounted(scrollToBottom)
             }}
           </div>
         </div>
-        <el-tag v-if="sending" type="warning" size="small">生成中…</el-tag>
+        <div class="chat-head-actions">
+          <el-tag v-if="sending" type="warning" size="small">生成中…</el-tag>
+          <el-button
+            v-if="activeConversationId"
+            size="small"
+            :icon="Download"
+            @click="downloadConversation"
+          >
+            导出 Markdown
+          </el-button>
+        </div>
       </header>
 
       <div ref="scrollRef" class="messages" @click="handleCitationClick">
@@ -415,6 +593,43 @@ onMounted(scrollToBottom)
               <span v-if="message.status === 'cancelled'" class="muted">已停止</span>
               <span v-if="message.status === 'failed'" class="error-text">生成失败</span>
               <span v-if="message.latency_ms !== null" class="muted">{{ message.latency_ms }} ms</span>
+              <span
+                v-if="citationSummary(message)"
+                class="muted"
+                :class="{ 'error-text': (message.citation_stats?.invalid_markers || 0) > 0 }"
+              >
+                {{ citationSummary(message) }}
+              </span>
+              <template v-if="canRate(message)">
+                <el-button
+                  text
+                  size="small"
+                  :class="{ 'feedback-active': message.feedback?.rating === 1 }"
+                  @click.stop="rateMessage(message, 1)"
+                >
+                  <el-icon><CaretTop /></el-icon>有用
+                </el-button>
+                <el-button
+                  text
+                  size="small"
+                  :class="{ 'feedback-active negative': message.feedback?.rating === -1 }"
+                  @click.stop="rateMessage(message, -1)"
+                >
+                  <el-icon><CaretBottom /></el-icon>没用
+                </el-button>
+              </template>
+              <span v-if="message.feedback?.rating === -1" class="muted">
+                {{ feedbackReasonLabel(message.feedback.reason) }}
+              </span>
+              <el-button
+                v-if="message.feedback?.rating === -1"
+                text
+                size="small"
+                type="primary"
+                @click.stop="makeEvalCase(message)"
+              >
+                转为评测用例
+              </el-button>
             </div>
 
             <div
@@ -428,6 +643,24 @@ onMounted(scrollToBottom)
               <div v-if="message.trace.rewrite_applied" class="trace-row">
                 <span class="trace-label">原始问题</span>
                 <span class="muted">{{ message.trace.query }}</span>
+              </div>
+              <div v-if="message.trace.cache_hit" class="trace-row">
+                <span class="trace-label">缓存</span>
+                <span class="ok-text">命中 Redis 检索缓存，跳过向量化与召回</span>
+              </div>
+              <div v-if="message.trace.sub_queries?.length" class="trace-row">
+                <span class="trace-label">多查询扩展</span>
+                <span>
+                  <el-tag
+                    v-for="subQuery in message.trace.sub_queries"
+                    :key="subQuery"
+                    size="small"
+                    type="info"
+                    class="sub-query-tag"
+                  >
+                    {{ subQuery }}
+                  </el-tag>
+                </span>
               </div>
               <div class="trace-row">
                 <span class="trace-label">重排</span>
@@ -506,14 +739,49 @@ onMounted(scrollToBottom)
             <el-tag v-if="!citation.cited" size="small" type="info">未引用</el-tag>
           </div>
           <div class="citation-meta muted">
-            {{ citation.heading_path || '无标题' }} · chunk #{{ citation.chunk_index }} · score
-            {{ fmt(citation.score) }}
+            {{ citation.heading_path || '无标题' }} · chunk #{{ citation.chunk_index }}
+            <span v-if="citation.page_number"> · 第 {{ citation.page_number }} 页</span>
+            · score {{ fmt(citation.score) }}
           </div>
           <p class="citation-text">{{ citation.snippet }}</p>
         </el-card>
         <el-empty v-if="!activeCitations.length" description="没有引用" />
       </div>
     </el-drawer>
+
+    <el-dialog v-model="feedbackDialogVisible" title="这条回答哪里有问题？" width="460px">
+      <el-form label-position="top">
+        <el-form-item label="原因">
+          <el-select v-model="feedbackReason" style="width: 100%">
+            <el-option
+              v-for="reason in feedbackReasons"
+              :key="reason.value"
+              :label="reason.label"
+              :value="reason.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="补充说明（可选）">
+          <el-input
+            v-model="feedbackComment"
+            type="textarea"
+            :rows="3"
+            maxlength="1000"
+            show-word-limit
+            placeholder="例如：答案引用了已过时的价格，应该是 2999 元"
+          />
+        </el-form-item>
+      </el-form>
+      <div class="feedback-hint muted">
+        差评可以一键转成评测用例，把这次失败变成下一次回归的基线。
+      </div>
+      <template #footer>
+        <el-button @click="feedbackDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="feedbackSaving" @click="saveNegativeFeedback">
+          提交评价
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -538,6 +806,10 @@ onMounted(scrollToBottom)
 
 .new-chat {
   width: 100%;
+}
+
+.conv-search {
+  margin-top: 10px;
 }
 
 .conv-list {
@@ -582,15 +854,17 @@ onMounted(scrollToBottom)
   font-size: 11px;
 }
 
-.conv-delete {
+.conv-actions {
+  display: flex;
   grid-row: 1 / span 2;
+  gap: 6px;
   align-self: center;
   color: #cbd5e1;
   font-size: 14px;
   visibility: hidden;
 }
 
-.conv-item:hover .conv-delete {
+.conv-item:hover .conv-actions {
   visibility: visible;
 }
 
@@ -620,6 +894,12 @@ onMounted(scrollToBottom)
   padding: 14px 24px;
   border-bottom: 1px solid #e5e7eb;
   background: #fff;
+}
+
+.chat-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .chat-title {
@@ -739,6 +1019,24 @@ onMounted(scrollToBottom)
 
 .cite-chip {
   color: #4338ca;
+}
+
+.feedback-active {
+  color: #16a34a;
+  font-weight: 600;
+}
+
+.feedback-active.negative {
+  color: #dc2626;
+}
+
+.sub-query-tag {
+  margin: 0 4px 4px 0;
+}
+
+.feedback-hint {
+  margin-top: 4px;
+  font-size: 12px;
 }
 
 .trace-panel {

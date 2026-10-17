@@ -1,4 +1,5 @@
 import re
+from bisect import bisect_right
 from dataclasses import dataclass
 
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
@@ -13,6 +14,16 @@ class ChunkDraft:
     heading_path: str | None
     char_start: int
     char_end: int
+    page_number: int | None = None
+
+
+def _page_for(offset: int, page_starts: list[tuple[int, int]]) -> int | None:
+    """Return the page whose text contains ``offset``."""
+    if not page_starts:
+        return None
+    offsets = [start for start, _ in page_starts]
+    index = bisect_right(offsets, offset) - 1
+    return page_starts[index][1] if index >= 0 else page_starts[0][1]
 
 
 def _split_blocks(text: str) -> list[tuple[str, int, str | None]]:
@@ -65,6 +76,7 @@ def _split_block(
     heading_path: str | None,
     chunk_size: int,
     chunk_overlap: int,
+    page_starts: list[tuple[int, int]],
 ) -> list[ChunkDraft]:
     chunks: list[ChunkDraft] = []
     length = len(block)
@@ -86,13 +98,15 @@ def _split_block(
         if content:
             leading = len(raw) - len(raw.lstrip())
             trailing = len(raw) - len(raw.rstrip())
+            char_start = block_start + pos + leading
             chunks.append(
                 ChunkDraft(
                     content=content,
                     embedding_text=f"{heading_path}\n{content}" if heading_path else content,
                     heading_path=heading_path,
-                    char_start=block_start + pos + leading,
+                    char_start=char_start,
                     char_end=block_start + end - trailing,
+                    page_number=_page_for(char_start, page_starts),
                 )
             )
 
@@ -107,12 +121,23 @@ def build_chunks(
     text: str,
     chunk_size: int = 400,
     chunk_overlap: int = 60,
+    page_starts: list[tuple[int, int]] | None = None,
 ) -> list[ChunkDraft]:
     if chunk_overlap >= chunk_size:
         raise ValueError("chunk_overlap 必须小于 chunk_size")
 
+    page_starts = page_starts or []
     drafts: list[ChunkDraft] = []
     for block, block_start, heading_path in _split_blocks(text):
-        drafts.extend(_split_block(block, block_start, heading_path, chunk_size, chunk_overlap))
+        drafts.extend(
+            _split_block(
+                block,
+                block_start,
+                heading_path,
+                chunk_size,
+                chunk_overlap,
+                page_starts,
+            )
+        )
 
     return [draft for draft in drafts if len(draft.content) >= MIN_CHUNK_CHARS]

@@ -5,6 +5,8 @@ import type {
   Conversation,
   DebugRequest,
   DebugResponse,
+  FeedbackCaseResult,
+  MessageFeedback,
   Page,
   RetrievalTrace,
 } from '@/types'
@@ -13,10 +15,45 @@ export async function listConversations(
   kbId: string,
   offset = 0,
   limit = 50,
+  q?: string,
 ): Promise<Page<Conversation>> {
   const { data } = await api.get<Page<Conversation>>(`/kbs/${kbId}/conversations`, {
-    params: { offset, limit },
+    params: { offset, limit, ...(q ? { q } : {}) },
   })
+  return data
+}
+
+export async function renameConversation(
+  conversationId: string,
+  title: string,
+): Promise<Conversation> {
+  const { data } = await api.patch<Conversation>(`/conversations/${conversationId}`, { title })
+  return data
+}
+
+export async function exportConversation(conversationId: string): Promise<Blob> {
+  const { data } = await api.get<Blob>(`/conversations/${conversationId}/export`, {
+    responseType: 'blob',
+  })
+  return data
+}
+
+export async function upsertFeedback(
+  messageId: string,
+  payload: { rating: -1 | 1; reason?: string | null; comment?: string | null },
+): Promise<MessageFeedback> {
+  const { data } = await api.put<MessageFeedback>(`/messages/${messageId}/feedback`, payload)
+  return data
+}
+
+export async function deleteFeedback(messageId: string): Promise<void> {
+  await api.delete(`/messages/${messageId}/feedback`)
+}
+
+export async function convertFeedbackToCase(messageId: string): Promise<FeedbackCaseResult> {
+  const { data } = await api.post<FeedbackCaseResult>(
+    `/messages/${messageId}/feedback/eval-case`,
+  )
   return data
 }
 

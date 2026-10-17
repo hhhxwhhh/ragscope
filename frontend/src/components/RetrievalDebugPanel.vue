@@ -34,6 +34,10 @@ const form = reactive({
   rrf_k: 60,
   min_vector_score: 0.45,
   use_rerank: true,
+  use_multi_query: false,
+  multi_query_count: 3,
+  multi_query_timeout_seconds: 8,
+  use_cache: true,
 })
 
 const stageLabels: Record<Stage, string> = {
@@ -45,6 +49,8 @@ const stageLabels: Record<Stage, string> = {
 
 const timingLabels: Record<string, string> = {
   rewrite_ms: 'query 改写',
+  cache_ms: '缓存查询',
+  multi_query_ms: '多查询扩展',
   embed_ms: '向量化',
   vector_ms: '向量检索',
   bm25_ms: 'BM25',
@@ -204,6 +210,8 @@ function applyDefaults(defaults: Record<string, unknown> | null | undefined): vo
     'final_top_k',
     'rrf_k',
     'min_vector_score',
+    'multi_query_count',
+    'multi_query_timeout_seconds',
   ] as const
   for (const key of numericKeys) {
     const value = defaults[key]
@@ -211,8 +219,10 @@ function applyDefaults(defaults: Record<string, unknown> | null | undefined): vo
       form[key] = value
     }
   }
-  if (typeof defaults.use_rerank === 'boolean') {
-    form.use_rerank = defaults.use_rerank
+  for (const key of ['use_rerank', 'use_multi_query', 'use_cache'] as const) {
+    if (typeof defaults[key] === 'boolean') {
+      form[key] = defaults[key]
+    }
   }
 }
 
@@ -247,6 +257,10 @@ function fmt(value: number | null | undefined): string {
 function useQuery(text: string): void {
   query.value = text
   run()
+}
+
+function queryLabel(index: number): string {
+  return index === 0 ? '原查询' : `扩展${index}`
 }
 
 watch(
@@ -333,6 +347,23 @@ watch(
             <span>启用重排</span>
             <el-switch v-model="form.use_rerank" :disabled="!overrideEnabled" />
           </label>
+          <label class="switch-label">
+            <span>多查询扩展</span>
+            <el-switch v-model="form.use_multi_query" :disabled="!overrideEnabled" />
+          </label>
+          <label>
+            <span>扩展查询数</span>
+            <el-input-number
+              v-model="form.multi_query_count"
+              :min="1"
+              :max="5"
+              :disabled="!overrideEnabled || !form.use_multi_query"
+            />
+          </label>
+          <label class="switch-label">
+            <span>Redis 检索缓存</span>
+            <el-switch v-model="form.use_cache" :disabled="!overrideEnabled" />
+          </label>
         </div>
       </el-collapse-item>
     </el-collapse>
@@ -347,6 +378,23 @@ watch(
             <span>·</span>
             <span :class="result.reranked ? 'ok-text' : 'warn-text'">
               {{ result.reranked ? '重排已生效' : `重排未生效${result.rerank_error ? '：' + result.rerank_error : ''}` }}
+            </span>
+            <span>·</span>
+            <span :class="result.cache_hit ? 'ok-text' : 'muted'">
+              {{ result.cache_hit ? 'Redis 缓存命中' : '缓存未命中' }}
+            </span>
+          </div>
+          <div v-if="result.sub_queries.length" class="sub-queries">
+            <el-tag
+              v-for="subQuery in result.sub_queries"
+              :key="subQuery"
+              size="small"
+              type="info"
+            >
+              {{ subQuery }}
+            </el-tag>
+            <span v-if="result.multi_query_error" class="warn-text">
+              扩展失败：{{ result.multi_query_error }}
             </span>
           </div>
         </div>
@@ -405,6 +453,20 @@ watch(
               <template #default="{ row }">
                 <span>{{ row.heading_path || '无标题' }}</span>
                 <span class="muted"> · #{{ row.chunk_index }}</span>
+                <span v-if="row.page_number" class="muted"> · 第 {{ row.page_number }} 页</span>
+              </template>
+            </el-table-column>
+            <el-table-column
+              v-if="stage === 'fused' || stage === 'final'"
+              label="命中查询"
+              width="96"
+              align="center"
+            >
+              <template #default="{ row }">
+                <span v-if="row.matched_queries?.length" class="muted">
+                  {{ row.matched_queries.map(queryLabel).join(' / ') }}
+                </span>
+                <span v-else class="muted">—</span>
               </template>
             </el-table-column>
             <el-table-column v-if="stage === 'vector'" label="向量分" width="110" align="right">
@@ -491,6 +553,7 @@ watch(
               <div class="save-ref-head">
                 <span class="save-ref-file">
                   {{ candidate.filename }} #{{ candidate.chunk_index }}
+                  <template v-if="candidate.page_number">（第 {{ candidate.page_number }} 页）</template>
                 </span>
                 <span class="muted">{{ candidate.heading_path || '无标题' }}</span>
               </div>
@@ -599,6 +662,14 @@ watch(
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 4px;
+  font-size: 12px;
+}
+
+.sub-queries {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
   font-size: 12px;
 }
 

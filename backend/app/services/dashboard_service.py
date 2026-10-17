@@ -7,13 +7,14 @@ so one account never sees another account's counts.
 from datetime import UTC, date, datetime, time, timedelta
 from uuid import UUID
 
-from sqlalchemy import Date, cast, func, select
+from sqlalchemy import Date, Float, Integer, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.chunk import Chunk
 from app.models.conversation import Conversation
 from app.models.document import Document, DocumentStatus
 from app.models.evaluation import EvalCase, EvalDataset, EvalRun
+from app.models.feedback import MessageFeedback
 from app.models.knowledge_base import KnowledgeBase
 from app.models.message import Message, MessageRole, MessageStatus
 from app.schemas.dashboard import DashboardSummary, DashboardTrend, RecentRunOut, TrendPoint
@@ -73,6 +74,41 @@ async def summary(db: AsyncSession, user_id: UUID) -> DashboardSummary:
         )
     )
 
+    feedback_positive = await db.scalar(
+        select(func.count())
+        .select_from(MessageFeedback)
+        .where(MessageFeedback.user_id == user_id, MessageFeedback.rating == 1)
+    )
+    feedback_negative = await db.scalar(
+        select(func.count())
+        .select_from(MessageFeedback)
+        .where(MessageFeedback.user_id == user_id, MessageFeedback.rating == -1)
+    )
+    feedback_positive = int(feedback_positive or 0)
+    feedback_negative = int(feedback_negative or 0)
+    feedback_total = feedback_positive + feedback_negative
+
+    citation_rate_expr = Message.citation_stats["citation_rate"].astext.cast(Float)
+    invalid_marker_expr = Message.citation_stats["invalid_markers"].astext.cast(Integer)
+    avg_citation_rate = await db.scalar(
+        select(func.avg(citation_rate_expr))
+        .select_from(Message)
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .where(
+            Conversation.user_id == user_id,
+            Message.citation_stats.is_not(None),
+        )
+    )
+    invalid_citation_markers = await db.scalar(
+        select(func.coalesce(func.sum(invalid_marker_expr), 0))
+        .select_from(Message)
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .where(
+            Conversation.user_id == user_id,
+            Message.citation_stats.is_not(None),
+        )
+    )
+
     recent_rows = (
         await db.execute(
             select(EvalRun, EvalDataset.name)
@@ -107,6 +143,13 @@ async def summary(db: AsyncSession, user_id: UUID) -> DashboardSummary:
         eval_case_count=int(eval_case_count or 0),
         eval_run_count=int(eval_run_count or 0),
         avg_latency_ms=round(float(avg_latency or 0), 1),
+        feedback_positive=feedback_positive,
+        feedback_negative=feedback_negative,
+        feedback_positive_rate=(
+            round(feedback_positive / feedback_total, 4) if feedback_total else 0.0
+        ),
+        avg_citation_rate=round(float(avg_citation_rate or 0), 4),
+        invalid_citation_markers=int(invalid_citation_markers or 0),
         recent_runs=recent_runs,
     )
 

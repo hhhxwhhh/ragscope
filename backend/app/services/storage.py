@@ -31,7 +31,7 @@ async def save_upload(
     filename = sanitize_filename(upload.filename)
     ext = Path(filename).suffix.lower()
     if ext not in SUPPORTED_EXTENSIONS:
-        raise UnsupportedMediaTypeError("v1 仅支持 .md 和 .txt 文件")
+        raise UnsupportedMediaTypeError("仅支持 .md / .txt / .pdf / .docx 文件")
 
     target = storage_root() / str(kb_id) / f"{document_id}{ext}"
     target.parent.mkdir(parents=True, exist_ok=True)

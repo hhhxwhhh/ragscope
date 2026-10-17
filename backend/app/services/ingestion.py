@@ -39,16 +39,18 @@ async def ingest_document(db: AsyncSession, document_id: UUID) -> None:
         if not path.is_file():
             raise FileNotFoundError("原始文件已丢失，请重新上传")
 
-        text = await anyio.to_thread.run_sync(parse_document, path)
+        parsed = await anyio.to_thread.run_sync(parse_document, path)
+        document.page_count = parsed.page_count
         kb = await db.get(KnowledgeBase, document.kb_id)
         if kb is None:
             raise RuntimeError("知识库已被删除")
 
         stage = "chunking"
         drafts = build_chunks(
-            text,
+            parsed.text,
             chunk_size=kb.chunk_size,
             chunk_overlap=kb.chunk_overlap,
+            page_starts=parsed.page_starts,
         )
         if not drafts:
             raise ValueError("文档没有可索引的内容（每个切块至少 30 字）")
@@ -77,6 +79,7 @@ async def ingest_document(db: AsyncSession, document_id: UUID) -> None:
                 content=draft.content,
                 embedding_text=draft.embedding_text,
                 heading_path=draft.heading_path,
+                page_number=draft.page_number,
                 char_start=draft.char_start,
                 char_end=draft.char_end,
             )
@@ -98,6 +101,7 @@ async def ingest_document(db: AsyncSession, document_id: UUID) -> None:
                         chunk_index=row.chunk_index,
                         filename=document.filename,
                         heading_path=row.heading_path or "",
+                        page_number=row.page_number,
                         content=row.content,
                         embedding=embedding,
                     )

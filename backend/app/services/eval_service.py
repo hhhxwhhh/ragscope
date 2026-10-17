@@ -386,7 +386,9 @@ def _effective_config(kb: KnowledgeBase, payload: EvalRunCreate) -> RetrievalCon
     config = RetrievalConfig.from_kb(kb)
     if payload.config is not None:
         config = replace(config, **payload.config.model_dump(exclude_none=True))
-    return config
+    # Evals measure real retrieval latency and must not share cached candidates
+    # across cases (or with chat); the snapshot records this explicitly.
+    return replace(config, use_cache=False)
 
 
 async def create_run(

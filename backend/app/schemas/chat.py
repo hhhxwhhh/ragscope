@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -7,6 +7,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class ConversationCreate(BaseModel):
     title: str | None = Field(default=None, max_length=200)
+
+
+class ConversationUpdate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
 
 
 class ConversationOut(BaseModel):
@@ -28,10 +32,28 @@ class CitationOut(BaseModel):
     filename: str
     chunk_index: int
     heading_path: str | None
+    page_number: int | None = None
     rank: int
     score: float | None
     snippet: str
     cited: bool
+
+
+class FeedbackIn(BaseModel):
+    rating: Literal[-1, 1]
+    reason: str | None = Field(default=None, max_length=40)
+    comment: str | None = Field(default=None, max_length=1000)
+
+
+class FeedbackOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    message_id: UUID
+    rating: int
+    reason: str | None
+    comment: str | None
+    updated_at: datetime
 
 
 class RetrievalTraceOut(BaseModel):
@@ -41,12 +63,21 @@ class RetrievalTraceOut(BaseModel):
     query: str
     rewritten_query: str
     rewrite_applied: bool
+    sub_queries: list[str] = Field(default_factory=list)
+    cache_hit: bool = False
     reranked: bool
     rerank_error: str | None
     config: dict[str, Any]
     candidates: dict[str, Any]
     stage_timings: dict[str, Any]
     created_at: datetime
+
+
+class FeedbackCaseOut(BaseModel):
+    dataset_id: UUID
+    dataset_name: str
+    case_id: UUID
+    created: bool
 
 
 class MessageOut(BaseModel):
@@ -58,10 +89,12 @@ class MessageOut(BaseModel):
     status: str
     latency_ms: int | None
     token_usage: dict[str, Any] | None
+    citation_stats: dict[str, Any] | None = None
     rewrite_query: str | None
     created_at: datetime
     citations: list[CitationOut] = Field(default_factory=list)
     trace: RetrievalTraceOut | None = None
+    feedback: FeedbackOut | None = None
 
 
 class ChatRequest(BaseModel):

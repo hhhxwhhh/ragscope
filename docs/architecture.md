@@ -10,7 +10,7 @@ Browser (Vue 3 + Element Plus)
    ▼
 Nginx (生产) ── /api/ ──> FastAPI (uvicorn)
                               ├── PostgreSQL 16  (业务数据 / 评测 / trace)
-                              ├── Redis 7        (refresh token、登录限流)
+                              ├── Redis 7        (refresh token、登录限流、检索结果缓存)
                               ├── Chroma         (每 KB 一个 collection)
                               └── 本地进程内任务   (文档入库、评测运行)
                                    ├── BGE embedding
@@ -61,21 +61,29 @@ POST /kbs/{id}/documents
        └─ 启动时: pending/parsing/indexing 超过 15 分钟 -> failed
 ```
 
-入库过程中 `index_version` 只在完全成功后递增。BM25 缓存和 Chroma metadata 都以它作为键，所以新索引不会读到旧缓存。
+`parsers` 统一返回 `ParsedDocument(text, page_starts, page_count)`。Markdown / TXT 没有页码；DOCX 把 Heading 样式转成 Markdown 标题、表格转成行文本；PDF 逐页提取并记录每页正文的字符起点。切块时用 `bisect_right` 把 `char_start` 映射回页码，`chunks.page_number` 由此得到，之后一路带到 Chroma metadata、引用和 trace。
+
+入库过程中 `index_version` 只在完全成功后递增。BM25 缓存、Chroma metadata 和 Redis 检索缓存都以它作为键，所以新索引不会读到旧缓存。
 
 ### 3. 问答（SSE）
 
 ```text
 POST /kbs/{id}/chat/stream
   ├─ 落用户消息（短 session，立即提交）
-  ├─ 检索: rewrite -> embed -> vector + BM25 -> RRF -> rerank
+  ├─ 检索: rewrite -> cache lookup -> （multi-query）-> embed -> vector + BM25
+  │        -> 跨 query 加权 RRF -> rerank -> cache store
   ├─ 先发 meta / retrieval 事件，再发 token
   ├─ 流式期间不持有 session
-  └─ 结束或断连: 落 assistant 消息 + citations + retrieval_trace，
+  └─ 结束或断连: 落 assistant 消息 + citations + citation_stats
+                  + retrieval_trace（含 sub_queries / cache_hit），
                   断连标记 cancelled 并保留部分内容
 ```
 
 SSE 用 POST + `fetch` 而不是 `EventSource`，因为需要请求体和 `Authorization` 头。前端自定义按 `\n\n` 分帧，并用 `TextDecoder({stream: true})` 处理跨 chunk 的中文多字节字符。
+
+检索缓存 key 是 `kb_id + index_version + asdict(RetrievalConfig) + 改写后 query + 历史消息哈希` 的 sha256。历史消息参与指纹，是因为指代消解已经发生在改写阶段：同一个追问在不同上下文中含义不同。缓存 TTL 默认 300 秒，读写失败都按 miss 处理（fail-open），不影响主链路；评测运行强制 `use_cache=False`，保证跑的是真实检索。
+
+多查询扩展让 LLM 生成 2–3 条不同表述的 query，每条分别走向量和 BM25，最后把所有排名一起做加权 RRF。它是一次额外的 LLM 调用，所以默认关闭、有超时（默认 8 秒），失败时回退到单查询，并在 trace 里记录 `multi_query_error`。
 
 ### 4. 评测运行
 
@@ -92,7 +100,24 @@ POST /eval/datasets/{id}/runs
 
 评测只跑到重排为止，不调用 LLM，所以是确定性的、零 API 成本的。运行进度存在 `eval_runs.progress`，前端轮询 `GET /eval/runs/{id}`。
 
-### 5. 启动与健康检查
+### 5. 反馈闭环
+
+```text
+PUT /messages/{id}/feedback
+  ├─ 只有会话所有者能评价自己的 assistant 消息
+  ├─ rating = 1 或 -1；同一消息唯一，重复提交即更新
+  └─ 写入 message_feedbacks
+
+POST /messages/{id}/feedback/eval-case
+  ├─ 找到该回答前一条用户消息作为 question
+  ├─ 被引用的 citations -> relevant_refs（无引用则取全部来源）
+  ├─ 没有引用或回答是拒答 -> answerable = false
+  └─ 写入（或复用）数据集「用户反馈回归集」
+```
+
+assistant 消息落库时会计算 `citation_stats`：解析回答里的 `[n]`，对照实际写入的引用条数，得到有效标记、无效标记、来源数和引用率。Dashboard 的用户满意度与引用有效率都来自这里。反馈不是"点个赞就结束"：点踩可以一键变成回归用例，下一次改检索配置时就能用评测台验证有没有把这个问题修好。
+
+### 6. 启动与健康检查
 
 - `lifespan`：恢复 stale 文档和 stale 评测运行；启动阶段不加载模型。
 - `/api/v1/healthz`：进程存活。
@@ -105,11 +130,12 @@ POST /eval/datasets/{id}/runs
 |---|---|
 | `users` | email 唯一、小写归一；argon2 哈希 |
 | `knowledge_bases` | `owner_id`；`index_version` 驱动缓存失效；`retrieval_config` JSONB |
-| `documents` | `(kb_id, sha256)` 唯一；状态机 + `error_stage` |
-| `chunks` | `(document_id, chunk_index)` 唯一；`heading_path`、字符区间 |
-| `conversations` / `messages` | 消息状态 `completed/cancelled/failed`，含延迟与 token 用量 |
-| `citations` | 引用排名、分数、片段；chunk 删除后置空 |
-| `retrieval_traces` | 改写 query、四阶段候选、分阶段耗时、配置快照 |
+| `documents` | `(kb_id, sha256)` 唯一；状态机 + `error_stage`；`page_count` |
+| `chunks` | `(document_id, chunk_index)` 唯一；`heading_path`、`page_number`、字符区间 |
+| `conversations` / `messages` | 消息状态 `completed/cancelled/failed`，含延迟与 token 用量；`citation_stats` |
+| `citations` | 引用排名、分数、片段、页码；chunk 删除后置空 |
+| `message_feedbacks` | 一条消息最多一条反馈；`rating ∈ {-1, 1}` + 原因 + 备注 |
+| `retrieval_traces` | 改写 query、`sub_queries`、`cache_hit`、四阶段候选、分阶段耗时、配置快照 |
 | `eval_datasets` / `eval_cases` | 数据集快照切块参数；用例标注到 chunk 级 |
 | `eval_runs` / `eval_results` | 运行快照配置与索引版本；结果快照问题与标注 |
 
@@ -135,6 +161,18 @@ JSONB 只用于配置、候选、指标、标注这类"整体读写"的数据，
 
 `EvalRun.config` 存 `asdict(RetrievalConfig)`，而不是只存用户改过的字段。这样即使默认值以后变了，历史运行仍然可以复现。对比两个 run 时要求 `index_version` 相同，否则 chunk 变了，排名没有可比性。
 
+### 检索缓存按"配置 + 上下文"做指纹
+
+缓存不能只按 query 做键：同一个问题换一套检索参数、换一个索引版本、或者出现在不同会话上下文里，结果都可能不同。所以 key 里包含 `index_version`、完整 `RetrievalConfig` 和历史消息哈希。代价是缓存命中率会低一些，但不会把旧结果发给新配置。缓存是优化而不是依赖：Redis 读写异常时直接当作 miss，继续走真实检索。
+
+### 多查询扩展默认关闭
+
+多查询能提高召回，但会多一次 LLM 调用，延迟和成本都上升。它被做成 `RetrievalConfig` 字段，可以在调试台单次开启、也可以作为评测配置运行，让数据决定值不值得开。失败或超时一律回退到单查询，主链路不因扩展失败而失败。
+
+### 反馈直接进入评测集
+
+反馈如果只存在一张表里，最后没人看。把点踩转成带 `relevant_refs` 的评测用例，等于把线上问题变成下一次可重复验证的回归样本；数据集与切块参数绑定，切块改了会拒绝写入旧标注，避免"标注漂移"。
+
 ### 长任务不在事务里做慢操作
 
 embedding 在写事务外完成；SSE 流式期间不持有 session；评测执行器每条用例单独提交。目标是缩短事务、避免长连接，并让取消/崩溃最多损失一条用例。
@@ -147,7 +185,9 @@ embedding 在写事务外完成；SSE 流式期间不持有 session；评测执�
 | 进程在入库中重启 | 文档卡在 parsing/indexing | 启动时超过 15 分钟标记 failed |
 | 进程在评测中重启 | run 卡在 pending/running | 启动时标记 failed，可重新发起 |
 | reranker 超时/异常 | 回退 RRF 顺序，trace 标记降级 | 不失败，只损失排序质量 |
-| Redis 不可用 | 登录/刷新失败 | 恢复 Redis；不降级放行 |
+| 多查询扩展失败/超时 | 回退单查询，trace 记录 `multi_query_error` | 不失败；可关闭该配置 |
+| 检索缓存读写失败 | 按未命中处理，继续走真实检索 | 不失败；Redis 恢复后自动重新使用 |
+| Redis 不可用（鉴权） | 登录/刷新失败 | 恢复 Redis；鉴权不降级放行 |
 | Chroma 不可用 | readyz 503，检索报错 | 恢复后重试；/readyz 可被编排系统使用 |
 
 ## 扩展方向

@@ -9,25 +9,37 @@
 ## 现在能做什么
 
 - 注册 / 登录：access JWT 放内存和 localStorage，refresh token 走 HttpOnly cookie、一次性轮换，前端单飞刷新；登录按 email + IP 做 Redis 失败计数限流
-- 知识库 CRUD；.md / .txt 上传，后台解析、结构感知切块、embedding、入库，失败可重试；进程重启会回收 stale 入库任务和评测运行
+- 知识库 CRUD；.md / .txt / .pdf / .docx 上传，后台解析、结构感知切块、embedding、入库，失败可重试；进程重启会回收 stale 入库任务和评测运行
+- 文档解析保留结构：Markdown 标题路径、DOCX 标题与表格、PDF 按页提取并记录页码；chunk、引用、trace 都能追溯到第几页
 - 混合检索：BGE 中文向量 + jieba/BM25，RRF 融合，`bge-reranker-base` 可选重排；每个知识库用 `index_version` 让 BM25 与向量缓存失效
+- 多查询扩展：可选用 LLM 生成 2–3 个改写问题一起召回，跨越不同表述提高召回；失败或超时会自动回退到单查询
+- Redis 检索缓存：按知识库、索引版本、完整检索配置、会话上下文和 query 做指纹，命中时跳过向量化、召回与重排；评测运行强制绕过缓存
 - 多轮问答：DeepSeek 流式输出（SSE over POST）、`[n]` 引用、来源抽屉、可中断、回答带检索 trace
+- 引用质量：每次回答统计引用标记数、有效/无效标记、命中来源数与引用率，写入 `messages.citation_stats`
+- 反馈闭环：对回答点赞 / 点踩并填写原因；点踩可一键转成评测用例（自动带入被引用 chunk 作为标注），拒答回答转成不可答案例
+- 会话管理：按标题搜索、重命名、导出 Markdown
 - 运维接口：`/healthz` 存活检查，`/readyz` 同时检查 PostgreSQL / Redis / Chroma；请求带 `X-Request-ID` 和耗时头
-- 检索调试台：向量 / BM25 / RRF / 重排四组候选，分阶段耗时瀑布，单次请求覆盖检索参数，一键保存为评测用例
+- 检索调试台：向量 / BM25 / RRF / 重排四组候选，分阶段耗时瀑布，单次请求覆盖检索参数，显示多查询扩展与缓存命中情况，一键保存为评测用例
 - 评测工作台：数据集与 chunk 级标注、配置预设、后台执行与进度、运行取消、逐条结果、两次运行对比
-- Dashboard：知识库 / 文档 / chunk / 会话 / 评测 KPI，14 天活动趋势，最近评测结果
+- Dashboard：知识库 / 文档 / chunk / 会话 / 评测 KPI，用户满意度、引用有效率，14 天活动趋势，最近评测结果
 
 ## 一次检索的链路
 
 ```text
 问题
   └─ query 改写（多轮时，DeepSeek）
-      └─ BGE embedding ──> Chroma 向量 top-k
-      └─ jieba + BM25 ───> 词法 top-k
-            └─ RRF 融合（k=60，可调权重）
-                └─ bge-reranker-base 重排（可选，3s 超时回退）
-                    └─ 带编号引用的 Prompt ──> DeepSeek（流式）
-                        └─ 回答 + 引用 + retrieval_trace
+      └─ Redis 缓存查询（kb + index_version + 配置 + 历史 + query 指纹）
+          ├─ 命中 ──> 直接复用候选 ────────────────┐
+          └─ 未命中                                  │
+              └─ 多查询扩展（可选，LLM 生成 2–3 条）  │
+                  └─ 每条 query 分别：                │
+                      BGE embedding ──> Chroma 向量 top-k
+                      jieba + BM25 ───> 词法 top-k
+                          └─ RRF 融合（跨 query 加权，k=60）
+                              └─ bge-reranker-base 重排（可选，3s 超时回退）
+                                  └─ 回写缓存 ────┤
+                                                  └─ 带编号引用的 Prompt ──> DeepSeek（流式）
+                                                      └─ 回答 + 引用 + citation_stats + retrieval_trace
 ```
 
 检索阶段的候选、分数、耗时都会写进 `retrieval_traces`；评测只跑这条链路到重排为止，不调用 LLM。
@@ -73,9 +85,10 @@ rag_learn/
 │   │   ├── api/v1/          # auth, kbs, documents, chat, retrieval, eval, dashboard
 │   │   ├── core/            # 配置、鉴权、依赖、错误处理
 │   │   ├── models/          # SQLAlchemy 模型，含 evaluation
-│   │   ├── rag/             # chunker, embedder, chroma, bm25, fusion, reranker, pipeline
+│   │   ├── rag/             # parsers, chunker, embedder, chroma, bm25, fusion,
+│   │   │                    # reranker, multi_query, retrieval_cache, pipeline
 │   │   ├── schemas/         # Pydantic 请求/响应
-│   │   ├── services/        # 入库、检索、会话、评测、看板
+│   │   ├── services/        # 入库、检索、会话、反馈、评测、看板
 │   │   └── workers/         # 文档入库后台任务
 │   ├── alembic/versions/
 │   ├── scripts/
@@ -167,7 +180,7 @@ cd backend
 .venv/Scripts/python.exe -m pytest -q
 ```
 
-- 40 个测试，`tests/unit` 覆盖切块、RRF、指标计算、JWT；`tests/integration` 覆盖注册/登录/刷新轮换/登出、登录限流、知识库越权 404、评测数据集校验、后台执行器、运行对比、stale 运行恢复。
+- 63 个测试，`tests/unit` 覆盖解析器（Markdown / DOCX / 空白 PDF）、页码映射、切块、RRF、指标计算、JWT、多查询解析、检索缓存 key、引用统计；`tests/integration` 覆盖注册/登录/刷新轮换/登出、登录限流、知识库越权 404、评测数据集校验、后台执行器、运行对比、stale 运行恢复、反馈增删改与转评测用例、会话搜索/重命名/导出。
 - 集成测试使用独立数据库 `ragscope_test` 和 Redis DB 1；session 开始时自动建库并跑迁移，每个测试前清空表和 Redis。
 - 评测执行器测试 mock 掉 `retrieve`，CI 只装 `.[dev]`，不需要下载 torch。
 - GitHub Actions 分两个 job：后端 ruff + pytest（PostgreSQL/Redis service），前端 typecheck + build。配置在 [.github/workflows/ci.yml](.github/workflows/ci.yml)。
@@ -189,8 +202,9 @@ cd backend
 ## 已知局限
 
 - 语料很小，评测数字只能说明流程跑通，不能当成通用结论
-- 生成侧只做了引用编号和人工抽检，没有答案忠实度自动评分
-- 目前只支持 .md / .txt；PDF 解析和扫描件 OCR 没做
+- 生成侧只统计引用标记是否有效，没有答案忠实度自动评分，也没有 LLM-as-judge
+- 支持 .md / .txt / .pdf / .docx，但扫描件 PDF 需要 OCR；PDF 只保留页码，不保留版式与表格结构
+- 多查询扩展是串行调用 LLM，开启后会增加一次生成侧延迟；Redis 缓存不做过期淘汰以外的容量治理
 - 后台任务和 API 同进程，只有单副本语义；进程重启会中断任务（启动时标 failed，可重跑）
 - 限流用 Redis 计数并在每次失败时重置窗口；没有实现分布式滑动窗口或令牌桶
 - 没有团队、RBAC 和审计日志；Chroma 为嵌入式单机模式
@@ -199,7 +213,7 @@ cd backend
 
 ## 接下来
 
-- 优先补生成侧评测（citation validity、人工抽检界面）和更大的标注集，而不是继续堆检索组件
+- 优先扩大「用户反馈回归集」并补人工抽检界面，把线上点踩持续转成回归用例，而不是继续堆检索组件
 - 多副本部署时把 BackgroundTasks 迁到 Celery/RQ，Chroma 换成独立向量服务
 - 登录限流升级为滑动窗口/令牌桶，并增加审计日志
 - 增加 Playwright 冒烟测试和前端组件测试

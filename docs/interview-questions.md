@@ -1,6 +1,6 @@
 # 面试题与参考要点
 
-按 RAGScope 的 12 个模块整理。每题先给结论，再给能落到代码和数字上的细节。面试时不要背全文，挑 2~3 个点讲清楚即可。
+按 RAGScope 的 12 个核心模块整理，v0.5 新增的解析、页码、多查询、缓存和反馈闭环放在第 13 节。每题先给结论，再给能落到代码和数字上的细节。面试时不要背全文，挑 2~3 个点讲清楚即可。
 
 ---
 
@@ -274,6 +274,42 @@
 - 放宽 `proxy_read_timeout`（项目设 300s），避免长回答被断开。
 - `proxy_http_version 1.1` 并清空 `Connection` 头，支持 chunked/keep-alive。
 - SPA 路由用 `try_files $uri $uri/ /index.html`，否则刷新 `/kbs/xxx` 会 404。
+
+---
+
+## 13. v0.5：解析、多查询、缓存与反馈闭环
+
+**Q1：PDF / DOCX 解析后，怎么让 chunk 和引用知道自己在第几页？**
+
+- 解析器统一返回 `ParsedDocument(text, page_starts, page_count)`，而不是只返回一个字符串。
+- PDF 逐页提取，记录每页正文拼接时的字符起点 `(char_offset, page_number)`；DOCX 把 Heading 样式转成 Markdown 标题、表格转成 `a | b` 行，没有页码。
+- 切块只关心 `char_start`，用 `bisect_right` 在 `page_starts` 上二分就能得到页码，不需要在切块逻辑里理解 PDF。
+- 页码随 chunk 写进 PostgreSQL、Chroma metadata、引用和 trace，前端来源抽屉直接显示「第 n 页」。
+- 取舍：只保留页码，不还原版式、表格坐标和图片；扫描件 PDF 没有文本层，直接报错而不是返回空文档。
+
+**Q2：多查询扩展怎么实现？为什么默认关闭？**
+
+- LLM 生成 2–3 条不同表述的 query，和原 query 一起分别走向量 + BM25；每条 query 的向量在一次 batch 里算完。
+- 所有排名一起做加权 RRF，候选去重时记录 `matched_queries`，能看出某个 chunk 是被哪几条 query 命中的。
+- 整段有超时（默认 8 秒），失败、超时或没配 key 时回退单查询，并在 trace 里写 `multi_query_error`。
+- 默认关闭是因为它多一次 LLM 调用，延迟和成本都增加；是否值得开由评测数据决定，调试台和评测配置都能单独打开。
+- BM25 仍然受该 query 的向量命中门槛约束，避免扩展出的 query 把语料外噪声带进来。
+
+**Q3：检索缓存的 key 为什么不能只用 query？**
+
+- 同一句话在不同知识库、不同索引版本、不同检索参数下结果不同，所以 key 包含 `kb_id`、`index_version`、完整 `RetrievalConfig`（`asdict` 后排序序列化）。
+- 多轮对话里同一个追问依赖上下文，改写后的 query 已经不同；再把历史消息的 `role:content` 做 sha256 放进 key，避免不同会话串结果。
+- 缓存值存的是候选列表而不是最终答案：Prompt 或模型变了仍可复用检索结果，也不会缓存"回答"这种强上下文内容。
+- 读写 Redis 失败一律按 miss 处理（fail-open）；评测运行强制 `use_cache=False` 并快照该字段，保证测的是真实检索耗时。
+- TTL 默认 300 秒，`index_version` 递增会让旧 key 自然失效，不需要手动清理。
+
+**Q4：点赞点踩之后，怎么让反馈真正影响项目？**
+
+- 反馈存在 `message_feedbacks`，一条消息唯一、`rating ∈ {-1, 1}`，重复提交即更新，避免重复计数。
+- 点踩可以转成评测用例：问题取前一条用户消息，标注取该回答实际引用的 chunk；拒答或无引用则成为不可答案例。
+- 转换写入自动创建的数据集「用户反馈回归集」，同一问题复用已有用例；数据集绑定切块参数，切块变了拒绝写入旧标注。
+- 同时 assistant 消息会算 `citation_stats`（标记数、有效/无效、来源数、引用率），Dashboard 展示满意度和引用有效率。
+- 诚实说明边界：被引用的 chunk 不一定包含答案，自动转换的用例仍建议人工复核；引用有效率只检查编号是否存在，不判断引用是否支持结论。
 
 ---
 

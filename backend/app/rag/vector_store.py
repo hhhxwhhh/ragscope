@@ -28,6 +28,7 @@ class ChunkVector:
     heading_path: str
     content: str
     embedding: list[float]
+    page_number: int | None = None
 
 
 @dataclass
@@ -39,6 +40,7 @@ class VectorHit:
     heading_path: str | None
     content: str
     score: float
+    page_number: int | None = None
 
 
 def collection_name(kb_id: UUID) -> str:
@@ -77,20 +79,25 @@ def upsert_chunks(kb_id: UUID, index_version: int, chunks: list[ChunkVector]) ->
     if not chunks:
         return 0
     collection = _get_or_create_collection(kb_id)
+    metadatas: list[dict[str, Any]] = []
+    for chunk in chunks:
+        metadata: dict[str, Any] = {
+            "document_id": chunk.document_id,
+            "chunk_index": chunk.chunk_index,
+            "filename": chunk.filename,
+            "heading_path": chunk.heading_path,
+            "index_version": index_version,
+        }
+        # Chroma metadata values cannot be None; omit the key for text formats.
+        if chunk.page_number is not None:
+            metadata["page_number"] = chunk.page_number
+        metadatas.append(metadata)
+
     collection.upsert(
         ids=[chunk.chunk_id for chunk in chunks],
         embeddings=[chunk.embedding for chunk in chunks],
         documents=[chunk.content for chunk in chunks],
-        metadatas=[
-            {
-                "document_id": chunk.document_id,
-                "chunk_index": chunk.chunk_index,
-                "filename": chunk.filename,
-                "heading_path": chunk.heading_path,
-                "index_version": index_version,
-            }
-            for chunk in chunks
-        ],
+        metadatas=metadatas,
     )
     return len(chunks)
 
@@ -137,6 +144,7 @@ def query(
                 heading_path=str(metadata.get("heading_path") or "") or None,
                 content=document or "",
                 score=1.0 - float(distance),
+                page_number=int(metadata["page_number"]) if metadata.get("page_number") else None,
             )
         )
     return hits
