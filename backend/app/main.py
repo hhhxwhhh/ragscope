@@ -8,10 +8,13 @@ from uuid import uuid4  # noqa: E402
 
 from fastapi import FastAPI, Request  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from fastapi.responses import JSONResponse  # noqa: E402
 
 from app.api.router import api_router  # noqa: E402
 from app.core.config import get_settings  # noqa: E402
+from app.core.errors import AppError  # noqa: E402
 from app.core.logging import configure_logging  # noqa: E402
+from app.db.redis import close_redis  # noqa: E402
 from app.db.session import engine  # noqa: E402
 
 settings = get_settings()
@@ -21,6 +24,7 @@ configure_logging(settings.log_level)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
+    await close_redis()
     await engine.dispose()
 
 
@@ -38,6 +42,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(AppError)
+async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.message, "code": exc.code},
+    )
 
 
 @app.middleware("http")
