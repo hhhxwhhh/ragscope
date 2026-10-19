@@ -22,6 +22,7 @@ import {
   exportConversation,
   listConversations,
   listMessages,
+  listPromptVariants,
   renameConversation,
   streamChat,
   upsertFeedback,
@@ -34,6 +35,7 @@ import type {
   Citation,
   Conversation,
   KnowledgeBase,
+  PromptVariant,
   RetrievalTrace,
   TraceCandidate,
 } from '@/types'
@@ -86,6 +88,21 @@ const routingReason = ref('')
 const activeModeHint = computed(
   () => CHAT_MODES.find((item) => item.value === chatMode.value)?.hint || '',
 )
+
+// Prompt variants are served by the backend so labels and descriptions have a
+// single source of truth. The selection is a per-browser preference.
+const promptVariants = ref<PromptVariant[]>([])
+const promptVariant = ref(localStorage.getItem('ragscope.prompt-variant') || 'grounded')
+const activePromptHint = computed(
+  () => promptVariants.value.find((item) => item.id === promptVariant.value)?.description || '',
+)
+
+function promptLabel(id: string | null): string {
+  if (!id) {
+    return ''
+  }
+  return promptVariants.value.find((item) => item.id === id)?.label || id
+}
 
 const conversationQuery = ref('')
 let searchTimer: ReturnType<typeof setTimeout> | undefined
@@ -297,6 +314,7 @@ function makeLocalMessage(role: 'user' | 'assistant', content: string): ChatMess
     token_usage: null,
     citation_stats: null,
     rewrite_query: null,
+    prompt_variant: role === 'assistant' ? promptVariant.value : null,
     created_at: new Date().toISOString(),
     citations: [],
     trace: null,
@@ -330,6 +348,7 @@ async function send(): Promise<void> {
         question,
         conversation_id: activeConversationId.value || null,
         mode: chatMode.value,
+        prompt_variant: promptVariant.value,
       },
       {
         onMeta: (meta) => {
@@ -602,7 +621,21 @@ watch(chatMode, (value) => {
   routingReason.value = ''
 })
 
-onMounted(scrollToBottom)
+watch(promptVariant, (value) => {
+  localStorage.setItem('ragscope.prompt-variant', value)
+})
+
+onMounted(async () => {
+  scrollToBottom()
+  try {
+    promptVariants.value = await listPromptVariants()
+    if (!promptVariants.value.some((item) => item.id === promptVariant.value)) {
+      promptVariant.value = promptVariants.value[0]?.id || 'grounded'
+    }
+  } catch {
+    // Older backend or transient failure: keep the default variant.
+  }
+})
 </script>
 
 <template>
@@ -690,6 +723,22 @@ onMounted(scrollToBottom)
               </el-radio-button>
             </el-radio-group>
           </el-tooltip>
+          <el-tooltip :content="activePromptHint || '选择回答使用的 Prompt 变体'" placement="bottom">
+            <el-select
+              v-model="promptVariant"
+              size="small"
+              class="prompt-select"
+              :disabled="sending"
+              placeholder="Prompt"
+            >
+              <el-option
+                v-for="item in promptVariants"
+                :key="item.id"
+                :label="item.label"
+                :value="item.id"
+              />
+            </el-select>
+          </el-tooltip>
           <el-button
             v-if="activeConversationId"
             size="small"
@@ -771,6 +820,14 @@ onMounted(scrollToBottom)
               </el-button>
               <span v-if="message.status === 'cancelled'" class="muted">已停止</span>
               <span v-if="message.status === 'failed'" class="error-text">生成失败</span>
+              <el-tag
+                v-if="message.role === 'assistant' && message.prompt_variant"
+                size="small"
+                type="info"
+                effect="plain"
+              >
+                {{ promptLabel(message.prompt_variant) }}
+              </el-tag>
               <span v-if="message.latency_ms !== null" class="muted">{{ message.latency_ms }} ms</span>
               <span
                 v-if="citationSummary(message)"
@@ -1133,6 +1190,10 @@ onMounted(scrollToBottom)
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.prompt-select {
+  width: 132px;
 }
 
 .chat-title {

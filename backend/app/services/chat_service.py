@@ -23,7 +23,12 @@ from app.models.retrieval_trace import RetrievalTrace
 from app.rag.answer import complete_answer
 from app.rag.llm import get_chat_model
 from app.rag.pipeline import RetrievalOutcome, retrieve
-from app.rag.prompt import citation_stats, extract_citation_ranks
+from app.rag.prompt import (
+    DEFAULT_PROMPT_VARIANT,
+    REFUSAL_MESSAGE,
+    citation_stats,
+    extract_citation_ranks,
+)
 from app.schemas.chat import (
     AgentRunOut,
     AgentStepOut,
@@ -35,7 +40,6 @@ from app.schemas.chat import (
 
 logger = logging.getLogger(__name__)
 
-REFUSAL_MESSAGE = "根据现有资料无法回答这个问题。"
 DEFAULT_TITLE = "新对话"
 
 
@@ -377,6 +381,7 @@ async def _save_assistant_message(
     latency_ms: int | None,
     usage: dict[str, Any] | None,
     agent: AgentPersistence | None = None,
+    prompt_variant: str = DEFAULT_PROMPT_VARIANT,
 ) -> MessageBundle:
     message = Message(
         conversation_id=conversation.id,
@@ -386,6 +391,7 @@ async def _save_assistant_message(
         latency_ms=latency_ms,
         token_usage=usage,
         rewrite_query=(outcome.rewritten_query if outcome is not None else None),
+        prompt_variant=prompt_variant,
     )
     db.add(message)
     await db.flush()
@@ -457,6 +463,8 @@ async def answer_once(
     user_id: UUID,
     question: str,
     conversation_id: UUID | None,
+    *,
+    prompt_variant: str = DEFAULT_PROMPT_VARIANT,
 ) -> tuple[Conversation, MessageBundle]:
     started = time.perf_counter()
     # Fail before persisting a user turn when no API key is configured.
@@ -482,6 +490,7 @@ async def answer_once(
             outcome.candidates,
             history,
             max_context_chars=get_settings().max_context_chars,
+            prompt_variant=prompt_variant,
         )
         answer = answer or REFUSAL_MESSAGE
     else:
@@ -497,6 +506,7 @@ async def answer_once(
         status=MessageStatus.COMPLETED,
         latency_ms=latency_ms,
         usage=usage,
+        prompt_variant=prompt_variant,
     )
     await db.flush()
     return conversation, bundle
@@ -508,6 +518,7 @@ class StreamPreparation:
     user_message_id: UUID
     outcome: RetrievalOutcome
     history: list[tuple[str, str]]
+    prompt_variant: str = DEFAULT_PROMPT_VARIANT
 
 
 async def prepare_stream(
@@ -515,6 +526,8 @@ async def prepare_stream(
     user_id: UUID,
     question: str,
     conversation_id: UUID | None,
+    *,
+    prompt_variant: str = DEFAULT_PROMPT_VARIANT,
 ) -> StreamPreparation:
     """Run retrieval and persist the user turn before the SSE stream starts.
 
@@ -547,6 +560,7 @@ async def prepare_stream(
             user_message_id=user_message.id,
             outcome=outcome,
             history=history,
+            prompt_variant=prompt_variant,
         )
 
 
@@ -559,6 +573,7 @@ async def save_streamed_answer(
     status: str,
     latency_ms: int,
     usage: dict[str, Any] | None,
+    prompt_variant: str = DEFAULT_PROMPT_VARIANT,
 ) -> MessageBundle | None:
     """Persist the streamed answer in a fresh session (request session is gone)."""
     async with SessionLocal() as db:
@@ -574,6 +589,7 @@ async def save_streamed_answer(
             status=status,
             latency_ms=latency_ms,
             usage=usage,
+            prompt_variant=prompt_variant,
         )
         await db.commit()
         return bundle
@@ -590,6 +606,7 @@ async def save_agent_answer_in_session(
     status: str,
     latency_ms: int,
     usage: dict[str, Any] | None,
+    prompt_variant: str = DEFAULT_PROMPT_VARIANT,
 ) -> MessageBundle:
     """Write an agent answer using the caller's transaction."""
     return await _save_assistant_message(
@@ -602,6 +619,7 @@ async def save_agent_answer_in_session(
         latency_ms=latency_ms,
         usage=usage,
         agent=agent,
+        prompt_variant=prompt_variant,
     )
 
 
@@ -615,6 +633,7 @@ async def save_answer_with_agent(
     status: str,
     latency_ms: int,
     usage: dict[str, Any] | None,
+    prompt_variant: str = DEFAULT_PROMPT_VARIANT,
 ) -> MessageBundle | None:
     """Persist a streamed agent answer in a fresh session."""
     async with SessionLocal() as db:
@@ -631,6 +650,7 @@ async def save_answer_with_agent(
             latency_ms=latency_ms,
             usage=usage,
             agent=agent,
+            prompt_variant=prompt_variant,
         )
         await db.commit()
         return bundle

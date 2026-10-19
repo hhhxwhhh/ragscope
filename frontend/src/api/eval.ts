@@ -35,6 +35,8 @@ export interface RetrievalOverrides {
 export interface EvalRunPayload {
   config?: RetrievalOverrides
   base_run_id?: string | null
+  include_generation?: boolean
+  prompt_variant?: string
 }
 
 export async function listDatasets(

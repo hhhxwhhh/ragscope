@@ -1,4 +1,9 @@
-from app.services.eval_service import aggregate_metrics, metric_deltas, score_case
+from app.services.eval_service import (
+    aggregate_metrics,
+    looks_refused,
+    metric_deltas,
+    score_case,
+)
 
 
 def _candidate(document_id: str, chunk_index: int) -> dict[str, object]:
@@ -101,6 +106,110 @@ def test_aggregate_metrics_excludes_errors_and_separates_refusal_rates() -> None
     assert metrics["p50_latency_ms"] == 30.0
     assert metrics["p95_latency_ms"] == 50.0
     assert metrics["elapsed_seconds"] == 1.23
+
+
+def _retrieval_metrics(recall: float = 1.0) -> dict[str, float]:
+    return {
+        "recall@1": recall,
+        "recall@3": recall,
+        "recall@5": recall,
+        "recall@10": recall,
+        "hit@5": recall,
+        "mrr": recall,
+    }
+
+
+def test_looks_refused_matches_fixed_sentence_and_common_phrasings() -> None:
+    assert looks_refused("根据现有资料无法回答这个问题。") is True
+    assert looks_refused("资料不足，无法确认该型号的保修期。") is True
+    assert looks_refused("X1 的续航是十二小时 [1]。") is False
+    assert looks_refused("") is False
+
+
+def test_aggregate_metrics_adds_generation_metrics_only_when_present() -> None:
+    results = [
+        {
+            "answerable": True,
+            "metrics": {
+                **_retrieval_metrics(),
+                "generation_latency_ms": 100,
+                "generation_tokens": 50,
+                "answer_refused": False,
+                "answer_grounded": True,
+            },
+            "refused": False,
+            "latency_ms": 10,
+            "error": None,
+        },
+        {
+            "answerable": True,
+            "metrics": {
+                **_retrieval_metrics(0.0),
+                "generation_latency_ms": 200,
+                "generation_tokens": 30,
+                "answer_refused": True,
+                "answer_grounded": False,
+            },
+            "refused": False,
+            "latency_ms": 12,
+            "error": None,
+        },
+        {
+            "answerable": False,
+            "metrics": {
+                **_retrieval_metrics(0.0),
+                "generation_latency_ms": 50,
+                "generation_tokens": 0,
+                "answer_refused": True,
+                "answer_grounded": False,
+            },
+            "refused": True,
+            "latency_ms": 8,
+            "error": None,
+        },
+        {
+            "answerable": True,
+            "metrics": {
+                **_retrieval_metrics(),
+                "generation_error": "timeout",
+                "generation_latency_ms": 10,
+                "generation_tokens": 0,
+            },
+            "refused": False,
+            "latency_ms": 9,
+            "error": None,
+        },
+    ]
+
+    metrics = aggregate_metrics(results, elapsed_seconds=1.0)
+
+    assert metrics["generation_cases"] == 4
+    assert metrics["generation_errors"] == 1
+    assert metrics["generation_refusal_accuracy"] == 1.0
+    # One of the three answerable generations refused.
+    assert metrics["generation_false_refusal_rate"] == 0.3333
+    # The error case has no answer_refused and is treated as answered.
+    assert metrics["answer_citation_rate"] == 0.5
+    assert metrics["avg_generation_latency_ms"] == 116.7
+    assert metrics["generation_total_tokens"] == 80
+
+
+def test_retrieval_only_run_has_no_generation_metrics() -> None:
+    results = [
+        {
+            "answerable": True,
+            "metrics": _retrieval_metrics(),
+            "refused": False,
+            "latency_ms": 10,
+            "error": None,
+        }
+    ]
+
+    metrics = aggregate_metrics(results, elapsed_seconds=0.5)
+
+    assert "generation_cases" not in metrics
+    assert "generation_refusal_accuracy" not in metrics
+    assert "avg_generation_latency_ms" not in metrics
 
 
 def test_metric_deltas_report_quality_points_and_latency_milliseconds() -> None:

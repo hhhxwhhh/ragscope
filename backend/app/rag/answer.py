@@ -1,8 +1,9 @@
 """Grounded answer generation as an LCEL chain.
 
-``ANSWER_PROMPT | ChatOpenAI`` is reused by single-shot RAG, agent runs and the
-non-streaming JSON endpoint. Streaming yields plain text deltas plus the final
-usage metadata; the HTTP layer only has to translate them into SSE events.
+``build_answer_prompt(variant) | ChatOpenAI`` is reused by single-shot RAG,
+agent runs and generation evaluation. Streaming yields plain text deltas plus
+the final usage metadata; the HTTP layer only has to translate them into SSE
+events.
 """
 
 from collections.abc import AsyncIterator
@@ -12,7 +13,7 @@ from typing import Any
 from langchain_core.messages import BaseMessage
 
 from app.rag.llm import get_chat_model, usage_to_dict
-from app.rag.prompt import ANSWER_PROMPT, build_answer_inputs
+from app.rag.prompt import build_answer_inputs, build_answer_prompt
 
 
 @dataclass
@@ -36,8 +37,8 @@ def _content_text(content: Any) -> str:
     return "" if content is None else str(content)
 
 
-def _chain():
-    return ANSWER_PROMPT | get_chat_model()
+def _chain(prompt_variant: str | None = None):
+    return build_answer_prompt(prompt_variant or "grounded") | get_chat_model()
 
 
 async def complete_answer(
@@ -46,8 +47,9 @@ async def complete_answer(
     history: list[tuple[str, str]],
     *,
     max_context_chars: int,
+    prompt_variant: str | None = None,
 ) -> tuple[str, dict[str, int] | None]:
-    message: BaseMessage = await _chain().ainvoke(
+    message: BaseMessage = await _chain(prompt_variant).ainvoke(
         build_answer_inputs(
             question,
             candidates,
@@ -64,6 +66,7 @@ async def stream_answer(
     history: list[tuple[str, str]],
     *,
     max_context_chars: int,
+    prompt_variant: str | None = None,
 ) -> AsyncIterator[AnswerChunk]:
     inputs = build_answer_inputs(
         question,
@@ -71,7 +74,7 @@ async def stream_answer(
         history,
         max_context_chars=max_context_chars,
     )
-    async for chunk in _chain().astream(inputs):
+    async for chunk in _chain(prompt_variant).astream(inputs):
         text = _content_text(chunk.content)
         usage = usage_to_dict(chunk.usage_metadata)
         if text or usage is not None:

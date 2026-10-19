@@ -28,6 +28,12 @@ const metricDefs = [
   { key: 'answerable_refusal_rate', label: '误拒答率' },
 ]
 
+const generationMetricDefs = [
+  { key: 'generation_refusal_accuracy', label: '生成拒答准确率' },
+  { key: 'generation_false_refusal_rate', label: '生成误拒答率' },
+  { key: 'answer_citation_rate', label: '回答引用合规率' },
+]
+
 const latencyDefs = [
   { key: 'avg_latency_ms', label: '平均', unit: 'ms' },
   { key: 'p50_latency_ms', label: 'P50', unit: 'ms' },
@@ -202,6 +208,21 @@ function isRefusalCorrect(result: EvalResult): boolean {
   return result.answerable ? !result.refused : result.refused
 }
 
+function generationTag(
+  result: EvalResult,
+): { type: 'success' | 'warning' | 'danger' | 'info'; label: string } {
+  if (result.metrics.generation_error) {
+    return { type: 'danger', label: '生成出错' }
+  }
+  if (result.metrics.answer_refused) {
+    return { type: 'warning', label: '拒答' }
+  }
+  if (result.metrics.answer_grounded) {
+    return { type: 'success', label: '有引用' }
+  }
+  return { type: 'info', label: '无引用' }
+}
+
 watch(
   () => props.id,
   () => {
@@ -272,6 +293,39 @@ onUnmounted(stopPolling)
         </el-card>
       </div>
 
+      <el-card
+        v-if="run.status === 'completed' && run.include_generation"
+        shadow="never"
+        class="generation-card"
+      >
+        <template #header>
+          <div class="generation-head">
+            <span class="card-title">生成评测</span>
+            <el-tag size="small" type="warning">prompt: {{ run.prompt_variant || 'grounded' }}</el-tag>
+          </div>
+        </template>
+        <div class="generation-metrics">
+          <div v-for="metric in generationMetricDefs" :key="metric.key" class="generation-metric">
+            <span class="generation-value">{{ fmt(run.metrics[metric.key]) }}</span>
+            <span class="muted">{{ metric.label }}</span>
+          </div>
+          <div class="generation-metric">
+            <span class="generation-value">
+              {{ fmtNum(run.metrics.avg_generation_latency_ms, 0) }}<small> ms</small>
+            </span>
+            <span class="muted">平均生成耗时</span>
+          </div>
+          <div class="generation-metric">
+            <span class="generation-value">{{ fmtNum(run.metrics.generation_total_tokens) }}</span>
+            <span class="muted">生成 tokens</span>
+          </div>
+        </div>
+        <div class="muted generation-note">
+          已生成 {{ run.metrics.generation_cases ?? 0 }} 条，出错 {{ run.metrics.generation_errors ?? 0 }} 条。
+          引用合规指回答至少含一个有效引用且没有越界编号；拒答用固定短语做确定性判断，不做 LLM 打分。
+        </div>
+      </el-card>
+
       <div class="secondary-grid">
         <el-card shadow="never" class="info-card">
           <template #header><span class="card-title">用例与耗时</span></template>
@@ -286,7 +340,7 @@ onUnmounted(stopPolling)
           </div>
           <div class="muted latency-note">
             已评分 {{ run.metrics.cases_scored ?? 0 }} / {{ run.metrics.cases_total ?? 0 }} 条；
-            出错用例不参与质量指标。耗时是检索-only，不含生成。
+            出错用例不参与质量指标。这里的耗时只统计检索，生成耗时见下方。
           </div>
         </el-card>
 
@@ -379,6 +433,21 @@ onUnmounted(stopPolling)
                     description="检索为空（触发拒答）"
                   />
                 </div>
+                <div v-if="row.answer" class="answer-block">
+                  <div class="detail-label">生成答案</div>
+                  <div class="answer-text">{{ row.answer }}</div>
+                  <div class="answer-meta muted mono">
+                    生成 {{ fmtNum(row.metrics.generation_latency_ms) }} ms ·
+                    {{ fmtNum(row.metrics.generation_tokens) }} tokens ·
+                    {{ fmtNum(row.metrics.answer_citation_markers) }} 个引用标记
+                    <template v-if="row.metrics.answer_invalid_citations">
+                      · {{ fmtNum(row.metrics.answer_invalid_citations) }} 个越界
+                    </template>
+                  </div>
+                </div>
+                <div v-if="row.metrics.generation_error" class="detail-error">
+                  生成失败：{{ row.metrics.generation_error }}
+                </div>
               </div>
             </template>
           </el-table-column>
@@ -414,6 +483,13 @@ onUnmounted(stopPolling)
               <span :class="isRefusalCorrect(row) ? 'ok-text' : 'bad-text'">
                 {{ isRefusalCorrect(row) ? '✓' : '✗' }}
               </span>
+            </template>
+          </el-table-column>
+          <el-table-column v-if="run.include_generation" label="生成" width="96" align="center">
+            <template #default="{ row }">
+              <el-tag :type="generationTag(row).type" size="small">
+                {{ generationTag(row).label }}
+              </el-tag>
             </template>
           </el-table-column>
           <el-table-column label="耗时" width="90" align="right">
@@ -482,6 +558,68 @@ onUnmounted(stopPolling)
   color: #4338ca;
   font-size: 22px;
   font-weight: 700;
+}
+
+.generation-card {
+  margin-bottom: 14px;
+  border-radius: 12px;
+}
+
+.generation-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.generation-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
+}
+
+.generation-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.generation-value {
+  color: #b45309;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.generation-value small {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.generation-note {
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.answer-block {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  background: #fffbeb;
+  font-size: 12px;
+}
+
+.answer-text {
+  margin: 6px 0;
+  color: #1f2937;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.answer-meta {
+  color: #92400e;
 }
 
 .secondary-grid {

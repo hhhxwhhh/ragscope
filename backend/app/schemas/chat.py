@@ -2,7 +2,9 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.rag.prompt import DEFAULT_PROMPT_VARIANT, get_prompt_variant
 
 
 class ConversationCreate(BaseModel):
@@ -115,6 +117,7 @@ class MessageOut(BaseModel):
     token_usage: dict[str, Any] | None
     citation_stats: dict[str, Any] | None = None
     rewrite_query: str | None
+    prompt_variant: str | None = None
     created_at: datetime
     citations: list[CitationOut] = Field(default_factory=list)
     trace: RetrievalTraceOut | None = None
@@ -130,6 +133,20 @@ class ChatRequest(BaseModel):
     # "auto" picks between them with a cheap rule-based router, so simple
     # questions keep the low-latency path and multi-hop questions get tools.
     mode: Literal["rag", "agent", "auto"] = "rag"
+    # Versioned grounded-answer prompt. Applied to the final answer on both the
+    # RAG and Agent paths; agent planning has its own fixed system prompt.
+    prompt_variant: str = DEFAULT_PROMPT_VARIANT
+
+    @field_validator("prompt_variant")
+    @classmethod
+    def _known_prompt_variant(cls, value: str) -> str:
+        return get_prompt_variant(value).id
+
+
+class PromptVariantOut(BaseModel):
+    id: str
+    label: str
+    description: str
 
 
 class ChatResponse(BaseModel):
@@ -138,3 +155,4 @@ class ChatResponse(BaseModel):
     # The path actually used. Useful when the caller asked for "auto".
     mode: Literal["rag", "agent"] | None = None
     routing_reason: str | None = None
+    prompt_variant: str = DEFAULT_PROMPT_VARIANT

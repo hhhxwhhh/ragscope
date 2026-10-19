@@ -104,3 +104,19 @@ async def test_unknown_chat_mode_is_rejected(client: AsyncClient, register: Any)
     )
 
     assert response.status_code == 422
+
+
+async def test_unknown_prompt_variant_is_rejected(
+    client: AsyncClient, register: Any
+) -> None:
+    _, headers = await register()
+    kb_id = await _create_kb(client, headers)
+
+    response = await client.post(
+        f"/api/v1/kbs/{kb_id}/chat",
+        json={"question": "X1 的续航是多少？", "prompt_variant": "creative"},
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+    assert "prompt_variant" in response.text

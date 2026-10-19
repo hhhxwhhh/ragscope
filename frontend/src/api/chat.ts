@@ -10,8 +10,14 @@ import type {
   FeedbackCaseResult,
   MessageFeedback,
   Page,
+  PromptVariant,
   RetrievalTrace,
 } from '@/types'
+
+export async function listPromptVariants(): Promise<PromptVariant[]> {
+  const { data } = await api.get<PromptVariant[]>('/prompts')
+  return data
+}
 
 export async function listConversations(
   kbId: string,
@@ -93,6 +99,7 @@ export interface StreamMeta {
   mode?: ChatMode
   requested_mode?: ChatMode
   routing_reason?: string | null
+  prompt_variant?: string
   rewritten_query: string
   rewrite_applied: boolean
   reranked: boolean

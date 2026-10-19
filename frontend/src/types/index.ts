@@ -184,6 +184,7 @@ export interface ChatMessage {
   token_usage: Record<string, number> | null
   citation_stats: CitationStats | null
   rewrite_query: string | null
+  prompt_variant: string | null
   created_at: string
   citations: Citation[]
   trace: RetrievalTrace | null
@@ -197,6 +198,13 @@ export interface ChatRequest {
   question: string
   conversation_id?: string | null
   mode?: ChatMode
+  prompt_variant?: string
+}
+
+export interface PromptVariant {
+  id: string
+  label: string
+  description: string
 }
 
 export interface DebugRequest {
@@ -252,6 +260,8 @@ export interface EvalRun {
   metrics: Record<string, number>
   progress: { done?: number; total?: number; current_case?: string | null }
   index_version: number
+  include_generation: boolean
+  prompt_variant: string | null
   error: string | null
   started_at: string | null
   finished_at: string | null
@@ -323,6 +333,7 @@ export interface EvalResult {
   metrics: Record<string, number | boolean | null>
   refused: boolean
   latency_ms: number
+  answer: string | null
   error: string | null
 }
 

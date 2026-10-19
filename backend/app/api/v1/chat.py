@@ -83,6 +83,7 @@ async def chat(
             current_user.id,
             payload.question,
             payload.conversation_id,
+            prompt_variant=payload.prompt_variant,
         )
     else:
         conversation, bundle = await chat_service.answer_once(
@@ -91,6 +92,7 @@ async def chat(
             current_user.id,
             payload.question,
             payload.conversation_id,
+            prompt_variant=payload.prompt_variant,
         )
     await db.commit()
     return ChatResponse(
@@ -98,6 +100,7 @@ async def chat(
         message=chat_service.to_message_out(bundle),
         mode=mode,
         routing_reason=routing_reason,
+        prompt_variant=payload.prompt_variant,
     )
 
 
@@ -122,6 +125,7 @@ async def chat_stream(
             current_user.id,
             payload.question,
             payload.conversation_id,
+            prompt_variant=payload.prompt_variant,
         )
         return StreamingResponse(
             _agent_event_stream(
@@ -138,6 +142,7 @@ async def chat_stream(
         current_user.id,
         payload.question,
         payload.conversation_id,
+        prompt_variant=payload.prompt_variant,
     )
     return StreamingResponse(
         _event_stream(
@@ -174,6 +179,7 @@ async def _agent_event_stream(
             "mode": "agent",
             "requested_mode": requested_mode,
             "routing_reason": routing_reason,
+            "prompt_variant": turn.prompt_variant,
             "rewritten_query": turn.question,
             "rewrite_applied": False,
             "reranked": False,
@@ -254,6 +260,7 @@ async def _agent_event_stream(
             result.evidence,
             turn.history,
             max_context_chars=settings.max_context_chars,
+            prompt_variant=turn.prompt_variant,
         ):
             if chunk.usage is not None:
                 _merge_usage(usage, chunk.usage)
@@ -345,6 +352,7 @@ async def _persist_agent(
             status=status,
             latency_ms=latency_ms,
             usage=usage,
+            prompt_variant=turn.prompt_variant,
         )
     except Exception:
         logger.exception("failed to persist agent answer")
@@ -369,6 +377,7 @@ async def _event_stream(
             "mode": "rag",
             "requested_mode": requested_mode,
             "routing_reason": routing_reason,
+            "prompt_variant": preparation.prompt_variant,
             "rewritten_query": outcome.rewritten_query,
             "rewrite_applied": outcome.trace.get("rewrite_applied", False),
             "reranked": outcome.trace.get("reranked", False),
@@ -404,6 +413,7 @@ async def _event_stream(
             outcome.candidates,
             preparation.history,
             max_context_chars=get_settings().max_context_chars,
+            prompt_variant=preparation.prompt_variant,
         ):
             if chunk.usage is not None:
                 usage = chunk.usage
@@ -476,6 +486,7 @@ async def _persist(
             status=status,
             latency_ms=latency_ms,
             usage=usage,
+            prompt_variant=preparation.prompt_variant,
         )
     except Exception:
         logger.exception("failed to persist streamed answer")

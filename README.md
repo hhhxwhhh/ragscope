@@ -37,6 +37,8 @@
 - 运维接口：`/healthz` 存活检查，`/readyz` 同时检查 PostgreSQL / Redis / Chroma；请求带 `X-Request-ID` 和耗时头
 - 检索调试台：向量 / BM25 / RRF / 重排四组候选，分阶段耗时瀑布，单次请求覆盖检索参数，显示多查询扩展与缓存命中情况，一键保存为评测用例
 - 评测工作台：数据集与 chunk 级标注、配置预设、后台执行与进度、运行取消、逐条结果、两次运行对比
+- Prompt Lab（v1）：`grounded` / `strict_citation` / `structured` 三个版本化 Prompt 写在代码里，聊天页可切换；每条 assistant 消息和每次生成评测都记录实际使用的变体。Prompt 不做数据库热编辑，保证任何一次回答都能被 git 历史复现
+- 生成评测（可选）：在检索评测之后逐条调用 LLM，用确定性规则统计生成拒答准确率、误拒答率、引用合规率、生成耗时与 token；不引入 LLM-as-judge，生成失败不污染已有的检索指标
 - 路由评测：用例可标注期望路径（`rag` / `agent`），按确定性路由器的实际输出计算准确率、Agent 类别的 precision / recall / F1 和混淆矩阵；未标注用例只展示预测，不污染指标
 - Dashboard：知识库 / 文档 / chunk / 会话 / 评测 KPI，Agent 运行成功率、平均步数 / 工具调用 / 耗时 / token，用户满意度、引用有效率，14 天活动趋势，最近评测结果
 
@@ -59,7 +61,7 @@
                                                       └─ 回答 + 引用 + citation_stats + retrieval_trace
 ```
 
-检索阶段的候选、分数、耗时都会写进 `retrieval_traces`；评测只跑这条链路到重排为止，不调用 LLM。
+检索阶段的候选、分数、耗时都会写进 `retrieval_traces`；评测默认只跑这条链路到重排为止，不调用 LLM，需要时再显式开启生成评测。
 
 ### Agentic RAG 与自动路由
 
@@ -128,6 +130,27 @@ Agent 路径用 `langchain.agents.create_agent` 编译一张 LangGraph ReAct 状
 
 混淆矩阵是 `rag→rag 26`、`rag→agent 1`、`agent→rag 0`、`agent→agent 2`。唯一的误判是「手表进水导致的故障能保修吗？」：规则里的 `导致` 本来是给多步故障排查准备的多跳信号，但这句话只需要查一段售后政策，因此被过度升级到了 Agent。把这条留在数据集里而不是调规则把它藏掉，是因为路由评测的价值就是暴露这种偏差；如果改规则，也应该重跑这份报告确认没有把真正的多跳问题一起降级。
 
+### Prompt 与生成评测
+
+同一份检索结果可以换 Prompt 再答一遍，这就是 Prompt 工程的对照组。项目内置三个版本：
+
+| 变体 | 约束 | 适合观察什么 |
+|---|---|---|
+| `grounded` | 先结论后细节，事实尽量标注 `[n]` | 默认回答风格；引用是“尽量”，最接近线上体验 |
+| `strict_citation` | 每个事实句必须有 `[n]`，无来源的句子删除 | 引用合规率是否上升，回答是否变短、变生硬 |
+| `structured` | 固定「结论 / 依据 / 下一步」 | 操作类、售后类问题是否更容易执行，拒答是否更稳定 |
+
+在聊天页顶部切换变体，回答下方会显示实际使用的版本；在评测运行弹窗打开「同时评测生成」并选择变体，得到：
+
+| 指标 | 口径 |
+|---|---|
+| 生成拒答准确率 | 不可答案例中，生成答案被判为拒答的比例 |
+| 生成误拒答率 | 可答案例中，生成答案被判为拒答的比例 |
+| 回答引用合规率 | 未拒答的可答案例中，至少含一个有效 `[n]` 且没有越界编号的比例 |
+| 平均生成耗时 / token | 只统计生成阶段，和检索延迟分开 |
+
+拒答判定不调用第二个模型：固定拒答句和少量常见措辞（“资料不足”“无法确认”等）做前缀匹配，引用编号用正则校验是否落在本轮来源范围内。这是一种**便宜的确定性信号**，能发现 Prompt 改动造成的激进拒答或引用退化，但不能替代人工抽检和忠实度评估。生成评测会真实消耗 token，默认关闭；检索-only 运行仍然零成本。
+
 ## 技术栈
 
 | 层 | 选型 |
@@ -147,7 +170,7 @@ Agent 路径用 `langchain.agents.create_agent` 编译一张 LangGraph ReAct 状
 rag_learn/
 ├── backend/
 │   ├── app/
-│   │   ├── api/v1/          # auth, kbs, documents, chat, retrieval, eval, dashboard
+│   │   ├── api/v1/          # auth, kbs, documents, chat, retrieval, eval, prompts, dashboard
 │   │   ├── core/            # 配置、鉴权、依赖、错误处理
 │   │   ├── models/          # SQLAlchemy 模型，含 evaluation
 │   │   ├── rag/             # llm, embedder, vector_store, bm25, fusion,
@@ -236,7 +259,8 @@ docker compose -f docker-compose.prod.yml exec api python scripts/seed_demo.py
 - 每次运行快照完整 `RetrievalConfig` 和知识库的 `index_version`；**不同索引版本的运行拒绝对比**，因为 chunk 已经变了，排名没有可比性
 - 可答案例算 Recall@1/3/5/10、Hit@5、MRR；不可答案例只算拒答准确率；另有可答案例误拒答率
 - 出错用例保留在结果里，但不参与质量指标的平均；延迟用 p50 / p95，避免长尾把均值带偏
-- 默认 retrieval-only，跑 29 条用例零 API 成本；以后可以加 `include_generation` 做人工抽检，但不做 LLM judge
+- 默认 retrieval-only，跑 29 条用例零 API 成本；`include_generation=true` 时额外调用 LLM，用确定性规则统计生成拒答、引用合规、耗时和 token，不做 LLM judge
+- Prompt 变体写在代码里并随消息 / 评测运行落库，便于回答级归因和跨版本复现；不在数据库里做 Prompt 热编辑
 - 路由评测与检索评测共用用例，但完全独立：`expected_mode` 可选，未标注的用例不进准确率；预测只调用纯函数路由器，不检索、不调模型，报告可以随开随看
 - 执行器在 FastAPI BackgroundTasks 中跑，每条用例独立提交、更新进度；取消时保留已完成部分
 
@@ -248,7 +272,7 @@ cd backend
 .venv/Scripts/python.exe -m pytest -q
 ```
 
-- 99 个测试，`tests/unit` 覆盖解析器（Markdown / DOCX / 空白 PDF）、页码映射、切块、RRF、指标计算、路由报告（准确率 / precision / recall / F1 / 混淆矩阵 / 未标注处理）、JWT、多查询解析、检索缓存 key、引用统计、自动路由信号与回退，以及用脚本化 fake model 跑真实 LangGraph 图验证 Agent 工具调用、参数校验、证据去重、步数预算、token 汇总与模型失败时的 fail-open；`tests/integration` 覆盖注册/登录/刷新轮换/登出、登录限流、知识库越权 404、评测数据集校验、期望路径的 PATCH 语义与路由报告、后台执行器、运行对比、stale 运行恢复、反馈增删改与转评测用例、会话搜索/重命名/导出，以及未配置 LLM key 时 Agent / auto 接口的 503。
+- 113 个测试，`tests/unit` 覆盖解析器（Markdown / DOCX / 空白 PDF）、页码映射、切块、RRF、指标计算、路由报告（准确率 / precision / recall / F1 / 混淆矩阵 / 未标注处理）、Prompt 注册表（默认变体、未知变体、固定拒答句、构建缓存）、生成指标聚合与拒答识别、JWT、多查询解析、检索缓存 key、引用统计、自动路由信号与回退，以及用脚本化 fake model 跑真实 LangGraph 图验证 Agent 工具调用、参数校验、证据去重、步数预算、token 汇总与模型失败时的 fail-open；`tests/integration` 覆盖注册/登录/刷新轮换/登出、登录限流、知识库越权 404、评测数据集校验、期望路径的 PATCH 语义与路由报告、Prompt 列表接口、生成评测的答案落库 / prompt 归因 / 无 key 拒绝、后台执行器、运行对比、stale 运行恢复、反馈增删改与转评测用例、会话搜索/重命名/导出，以及未配置 LLM key 时 Agent / auto 接口的 503。
 - 集成测试使用独立数据库 `ragscope_test` 和 Redis DB 1；session 开始时自动建库并跑迁移，每个测试前清空表和 Redis。
 - 评测执行器测试 mock 掉 `retrieve`，CI 只装 `.[dev]`，不需要下载 torch。
 - GitHub Actions 分两个 job：后端 ruff + pytest（PostgreSQL/Redis service），前端 typecheck + build。配置在 [.github/workflows/ci.yml](.github/workflows/ci.yml)。
@@ -272,7 +296,8 @@ cd backend
 ## 已知局限
 
 - 语料很小，评测数字只能说明流程跑通，不能当成通用结论
-- 生成侧只统计引用标记是否有效，没有答案忠实度自动评分，也没有 LLM-as-judge
+- 生成侧只有拒答与引用格式的确定性检查，没有答案忠实度 / 相关性自动评分，也没有 LLM-as-judge；拒答识别依赖固定措辞，换模型后可能需要补充匹配规则
+- Prompt 变体随代码发布，新增版本需要改代码和发版；没有面向运营的 Prompt 编辑、灰度与回滚平台
 - 支持 .md / .txt / .pdf / .docx，但扫描件 PDF 需要 OCR；PDF 只保留页码，不保留版式与表格结构
 - 多查询扩展是串行调用 LLM，开启后会增加一次生成侧延迟；Redis 缓存不做过期淘汰以外的容量治理
 - 后台任务和 API 同进程，只有单副本语义；进程重启会中断任务（启动时标 failed，可重跑）
@@ -284,6 +309,7 @@ cd backend
 ## 接下来
 
 - 优先扩大「用户反馈回归集」并补人工抽检界面，把线上点踩持续转成回归用例，而不是继续堆检索组件
+- 用生成评测对 Prompt 变体做 A/B：同一数据集、同一索引版本，只看拒答 / 引用 / 延迟的取舍；样本足够后再考虑接入 LLM-as-judge 做忠实度评估
 - 多副本部署时把 BackgroundTasks 迁到 Celery/RQ，Chroma 换成独立向量服务
 - 登录限流升级为滑动窗口/令牌桶，并增加审计日志
 - 增加 Playwright 冒烟测试和前端组件测试

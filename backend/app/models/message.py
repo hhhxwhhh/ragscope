@@ -38,4 +38,7 @@ class Message(Base):
     # {"markers": 4, "invalid_markers": 0, "cited_sources": 3, "citation_rate": 0.6}
     citation_stats: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     rewrite_query: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Which grounded-answer prompt produced this message. Null on user turns and
+    # on old rows; the UI treats it as "grounded" when absent.
+    prompt_variant: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

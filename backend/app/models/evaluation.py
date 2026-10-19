@@ -102,6 +102,12 @@ class EvalRun(Base):
         JSONB, default=dict, server_default=text("'{}'::jsonb")
     )
     index_version: Mapped[int] = mapped_column(Integer)
+    # Optional generation pass. Retrieval-only runs keep both fields empty, so
+    # their cost stays zero and existing comparisons remain valid.
+    include_generation: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    prompt_variant: Mapped[str | None] = mapped_column(String(32), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -132,5 +138,7 @@ class EvalResult(Base):
     metrics: Mapped[dict[str, Any]] = mapped_column(JSONB)
     refused: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     latency_ms: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Generated answer when the run enabled generation; null for retrieval-only.
+    answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

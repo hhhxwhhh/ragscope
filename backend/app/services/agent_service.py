@@ -32,6 +32,7 @@ class AgentTurn:
     question: str
     history: list[tuple[str, str]]
     config: RetrievalConfig
+    prompt_variant: str = "grounded"
 
 
 async def prepare_turn(
@@ -39,6 +40,8 @@ async def prepare_turn(
     user_id: UUID,
     question: str,
     conversation_id: UUID | None,
+    *,
+    prompt_variant: str = "grounded",
 ) -> AgentTurn:
     """Ownership check, conversation creation and user turn persistence.
 
@@ -71,6 +74,7 @@ async def prepare_turn(
             question=question,
             history=history,
             config=config,
+            prompt_variant=prompt_variant,
         )
 
 
@@ -137,6 +141,8 @@ async def answer_agent_once(
     user_id: UUID,
     question: str,
     conversation_id: UUID | None,
+    *,
+    prompt_variant: str = "grounded",
 ) -> tuple[Conversation, chat_service.MessageBundle]:
     """Non-streaming agent path used by the JSON endpoint and tests."""
     started = time.perf_counter()
@@ -179,6 +185,7 @@ async def answer_agent_once(
             result.evidence,
             history,
             max_context_chars=settings.max_context_chars,
+            prompt_variant=prompt_variant,
         )
         answer = answer or chat_service.REFUSAL_MESSAGE
         _merge_usage(usage, answer_usage)
@@ -196,6 +203,7 @@ async def answer_agent_once(
         status=MessageStatus.COMPLETED,
         latency_ms=latency_ms,
         usage=usage or None,
+        prompt_variant=prompt_variant,
     )
     await db.flush()
     return conversation, bundle

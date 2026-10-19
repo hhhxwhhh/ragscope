@@ -82,7 +82,7 @@ POST /kbs/{id}/chat/stream
                   断连标记 cancelled 并保留部分内容
 ```
 
-回答由 LCEL 链生成：`ANSWER_PROMPT | ChatOpenAI`，`astream()` 逐块返回文本和最终的 `usage_metadata`。查询改写和多查询扩展也是同构的短链，各自 `bind(temperature=..., max_completion_tokens=...)`，避免在 Prompt 里放采样参数。SSE 用 POST + `fetch` 而不是 `EventSource`，因为需要请求体和 `Authorization` 头。前端自定义按 `\n\n` 分帧，并用 `TextDecoder({stream: true})` 处理跨 chunk 的中文多字节字符。
+回答由 LCEL 链生成：`build_answer_prompt(variant) | ChatOpenAI`，`astream()` 逐块返回文本和最终的 `usage_metadata`。Prompt 变体在 `app/rag/prompt.py` 中注册，按 id 用 `lru_cache` 缓存对应的 `ChatPromptTemplate`；聊天请求的 `prompt_variant` 会随 `meta` 事件返回，并写入 assistant 消息。查询改写和多查询扩展也是同构的短链，各自 `bind(temperature=..., max_completion_tokens=...)`，避免在 Prompt 里放采样参数。SSE 用 POST + `fetch` 而不是 `EventSource`，因为需要请求体和 `Authorization` 头。前端自定义按 `\n\n` 分帧，并用 `TextDecoder({stream: true})` 处理跨 chunk 的中文多字节字符。
 
 检索缓存 key 是 `kb_id + index_version + asdict(RetrievalConfig) + 改写后 query + 历史消息哈希` 的 sha256。历史消息参与指纹，是因为指代消解已经发生在改写阶段：同一个追问在不同上下文中含义不同。缓存 TTL 默认 300 秒，读写失败都按 miss 处理（fail-open），不影响主链路；评测运行强制 `use_cache=False`，保证跑的是真实检索。
 
@@ -130,11 +130,15 @@ POST /eval/datasets/{id}/runs
   └─ BackgroundTasks: execute_run(run_id)
        ├─ 独立 SessionLocal，每条用例提交一次
        ├─ 逐条 retrieve -> score_case -> eval_results
+       ├─ （可选）include_generation: complete_answer -> 拒答/引用检查
+       │    └─ answer 原文与生成指标写进同一条 eval_result
        ├─ 取消: 下一次循环检查 status=cancelled
        └─ 进程重启: 超过 15 分钟的 pending/running -> failed
 ```
 
-评测只跑到重排为止，不调用 LLM，所以是确定性的、零 API 成本的。运行进度存在 `eval_runs.progress`，前端轮询 `GET /eval/runs/{id}`。
+默认评测只跑到重排为止，不调用 LLM，所以是确定性的、零 API 成本的。`include_generation=true` 时，执行器在每条用例的检索完成后追加一次生成：没有候选就直接写固定拒答，不调用模型；生成异常只附着在该用例上，不终止整次运行。检索延迟与生成延迟分开统计，避免慢模型污染配置对比。运行进度存在 `eval_runs.progress`，前端轮询 `GET /eval/runs/{id}`。
+
+Prompt 变体与评测共用同一条 `build_answer_prompt(variant)` 链，因此聊天页看到的行为和评测跑出来的行为是同一份代码，而不是两套 Prompt。`GET /prompts` 只返回元数据（id / 名称 / 说明），Prompt 正文不下发，避免前端缓存过期的版本。
 
 路由评测是另一条更轻的路径：`GET /eval/datasets/{id}/routing-report` 读取用例的 `expected_mode`，对每个问题调用纯函数 `choose_mode`，现场计算准确率、Agent P/R/F1 和混淆矩阵。它不写 run、不排队、不检索、不加载模型；未标注用例只返回预测，不进入指标。`PATCH /eval/cases/{id}` 用 `model_fields_set` 区分「没传」和「显式传 null」，因此可以单独清除路径标注而不影响其他字段。
 
@@ -210,6 +214,10 @@ JSONB 只用于配置、候选、指标、标注这类"整体读写"的数据，
 
 `EvalRun.config` 存 `asdict(RetrievalConfig)`，而不是只存用户改过的字段。这样即使默认值以后变了，历史运行仍然可以复现。对比两个 run 时要求 `index_version` 相同，否则 chunk 变了，排名没有可比性。
 
+### Prompt 版本化在代码里，而不是数据库里
+
+Prompt 变体用不可变 dataclass 注册，正文随代码 review，`prompt_variant` 只是消息和评测运行上的一个 id。这样回答可以追溯到具体版本，历史运行也能复现；如果想改一句话，需要发版。反过来，如果做成数据库热编辑，运营改完立即生效，但同一份评测结果无法解释"当时到底是哪版 Prompt"，也缺少 diff 和回滚。当前阶段选择可复现性，未来真要做运营后台，应再加版本表、发布状态和流量分配，而不是允许原地覆盖。
+
 ### 检索缓存按"配置 + 上下文"做指纹
 
 缓存不能只按 query 做键：同一个问题换一套检索参数、换一个索引版本、或者出现在不同会话上下文里，结果都可能不同。所以 key 里包含 `index_version`、完整 `RetrievalConfig` 和历史消息哈希。代价是缓存命中率会低一些，但不会把旧结果发给新配置。缓存是优化而不是依赖：Redis 读写异常时直接当作 miss，继续走真实检索。
@@ -246,6 +254,6 @@ embedding 在写事务外完成；SSE 流式期间不持有 session；评测执�
 
 1. **多副本 API**：BackgroundTasks 换成外部队列；Chroma 换成独立服务；SSE 通过负载均衡的 sticky session 或独立网关。
 2. **更大语料**：BM25 全量进内存不现实，换 OpenSearch/Elasticsearch 或按 KB 分片；embedding 批处理与增量索引。
-3. **生成侧评测**：citation validity、人工抽检、A/B 回答对比；仍然不建议直接用 LLM judge 当唯一标准。
+3. **生成侧评测**：现有拒答 / 引用检查只是确定性代理；下一步是人工抽检队列、忠实度评估和 Prompt A/B 流量分配。仍然不建议直接用 LLM judge 当唯一标准。
 4. **多租户与权限**：团队、角色、审计日志；所有查询增加 tenant 维度。
 5. **可观测性**：结构化日志 + OpenTelemetry trace，把检索阶段耗时接到 APM。

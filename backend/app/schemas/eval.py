@@ -2,8 +2,9 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.rag.prompt import DEFAULT_PROMPT_VARIANT, get_prompt_variant
 from app.schemas.retrieval import RetrievalConfigIn
 
 
@@ -76,6 +77,15 @@ class EvalCaseUpdate(BaseModel):
 class EvalRunCreate(BaseModel):
     config: RetrievalConfigIn | None = None
     base_run_id: UUID | None = None
+    # Optional generation pass. Disabled by default so the normal evaluation
+    # path stays deterministic and free.
+    include_generation: bool = False
+    prompt_variant: str = DEFAULT_PROMPT_VARIANT
+
+    @field_validator("prompt_variant")
+    @classmethod
+    def _known_prompt_variant(cls, value: str) -> str:
+        return get_prompt_variant(value).id
 
 
 class EvalRunOut(BaseModel):
@@ -90,6 +100,8 @@ class EvalRunOut(BaseModel):
     metrics: dict[str, Any]
     progress: dict[str, Any]
     index_version: int
+    include_generation: bool = False
+    prompt_variant: str | None = None
     error: str | None
     started_at: datetime | None
     finished_at: datetime | None
@@ -109,6 +121,7 @@ class EvalResultOut(BaseModel):
     metrics: dict[str, Any]
     refused: bool
     latency_ms: int
+    answer: str | None = None
     error: str | None
 
 

@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Plus, Search, VideoPlay } from '@element-plus/icons-vue'
 
+import { listPromptVariants } from '@/api/chat'
 import {
   cancelRun as cancelEvalRun,
   createCase,
@@ -27,6 +28,7 @@ import type {
   EvalRun,
   EvalRunDetail,
   EvalRunStatus,
+  PromptVariant,
   RelevantRef,
   RoutingReport,
 } from '@/types'
@@ -79,7 +81,27 @@ const runForm = reactive({
   vector_weight: 1,
   bm25_weight: 1,
   use_rerank: false,
+  include_generation: false,
+  prompt_variant: 'grounded',
 })
+
+// Fallback keeps the run dialog usable if the prompts endpoint fails.
+const promptVariants = ref<PromptVariant[]>([
+  { id: 'grounded', label: '平衡（默认）', description: '' },
+  { id: 'strict_citation', label: '严格引用', description: '' },
+  { id: 'structured', label: '结构化输出', description: '' },
+])
+
+async function loadPromptVariants(): Promise<void> {
+  try {
+    const variants = await listPromptVariants()
+    if (variants.length) {
+      promptVariants.value = variants
+    }
+  } catch {
+    // Keep the fallback list.
+  }
+}
 
 const presets = [
   { key: 'vector', label: '向量基线', config: { bm25_weight: 0, use_rerank: false } },
@@ -449,7 +471,11 @@ async function startRun(): Promise<void> {
   }
   runStarting.value = true
   try {
-    const run = await createRun(activeDataset.value.id, { config: buildConfig() })
+    const run = await createRun(activeDataset.value.id, {
+      config: buildConfig(),
+      include_generation: runForm.include_generation,
+      prompt_variant: runForm.prompt_variant,
+    })
     watchingId.value = run.id
     watchingRun.value = null
     await loadRuns()
@@ -516,6 +542,7 @@ watch(
   () => {
     stopPolling()
     refreshAll().catch(() => undefined)
+    loadPromptVariants().catch(() => undefined)
   },
   { immediate: true },
 )
@@ -1019,8 +1046,34 @@ onUnmounted(stopPolling)
         </label>
       </div>
 
+      <div class="generation-row">
+        <label class="switch-label">
+          <span>同时评测生成</span>
+          <el-switch v-model="runForm.include_generation" />
+        </label>
+        <el-select
+          v-if="runForm.include_generation"
+          v-model="runForm.prompt_variant"
+          size="small"
+          class="prompt-select"
+        >
+          <el-option
+            v-for="variant in promptVariants"
+            :key="variant.id"
+            :label="variant.label"
+            :value="variant.id"
+          />
+        </el-select>
+      </div>
+
       <div class="run-note muted">
-        检索-only 运行，不调用 LLM，零 API 成本。用例按顺序执行，进度会实时刷新。
+        <template v-if="runForm.include_generation">
+          检索完成后逐条调用 LLM 生成答案，会消耗 token；额外产出生成拒答准确率、引用合规率与生成耗时。
+          用例按顺序执行，进度会实时刷新。
+        </template>
+        <template v-else>
+          检索-only 运行，不调用 LLM，零 API 成本。用例按顺序执行，进度会实时刷新。
+        </template>
       </div>
 
       <div v-if="watchingRun" class="watching">
@@ -1311,6 +1364,25 @@ onUnmounted(stopPolling)
 
 .run-config-grid .switch-label {
   justify-content: flex-end;
+}
+
+.generation-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 12px;
+  color: #475569;
+  font-size: 12px;
+}
+
+.generation-row .switch-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.generation-row .prompt-select {
+  width: 168px;
 }
 
 .watching {

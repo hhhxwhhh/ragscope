@@ -1,8 +1,10 @@
 """Evaluation datasets, runs and retrieval metrics.
 
-v1 is retrieval-only and deterministic: no LLM judge, no API cost. A case is
-labelled at chunk level; metrics are computed against the final retrieval order
-that the chat pipeline would send to the LLM.
+The default run is retrieval-only and deterministic: no LLM judge, no API cost.
+A case is labelled at chunk level; metrics are computed against the final
+retrieval order that the chat pipeline would send to the LLM. Runs can opt into
+an answer-generation pass, which adds deterministic refusal and citation checks
+plus prompt-variant attribution, but no LLM-as-judge score.
 """
 
 import logging
@@ -17,6 +19,7 @@ from uuid import UUID
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.errors import BadRequestError, ConflictError, NotFoundError
 from app.db.session import SessionLocal
 from app.models.chunk import Chunk
@@ -29,7 +32,14 @@ from app.models.evaluation import (
     EvalRunStatus,
 )
 from app.models.knowledge_base import KnowledgeBase
+from app.rag.answer import complete_answer
 from app.rag.pipeline import RetrievalConfig, retrieve
+from app.rag.prompt import (
+    DEFAULT_PROMPT_VARIANT,
+    REFUSAL_MESSAGE,
+    citation_stats,
+    extract_citation_ranks,
+)
 from app.rag.router import choose_mode
 from app.schemas.eval import EvalCaseCreate, EvalCaseUpdate, EvalRunCreate, RelevantRef
 
@@ -48,6 +58,11 @@ METRIC_LABELS = {
     "avg_latency_ms": "平均检索耗时",
     "p50_latency_ms": "P50 耗时",
     "p95_latency_ms": "P95 耗时",
+    "generation_refusal_accuracy": "生成拒答准确率",
+    "generation_false_refusal_rate": "生成误拒答率",
+    "answer_citation_rate": "回答引用合规率",
+    "avg_generation_latency_ms": "平均生成耗时",
+    "generation_total_tokens": "生成 token 总量",
 }
 TERMINAL_STATUSES = {
     EvalRunStatus.COMPLETED,
@@ -449,6 +464,27 @@ def _percentile(values: list[float], ratio: float) -> float:
     return round(ordered[index], 1)
 
 
+_REFUSAL_MARKERS = (
+    "根据现有资料无法回答",
+    "无法根据现有资料",
+    "资料不足",
+    "没有足够资料",
+    "无法确认",
+)
+
+
+def looks_refused(answer: str) -> bool:
+    """Cheap deterministic refusal detector for generation evaluation.
+
+    The strict variants ask the model to emit one fixed sentence, but the
+    default variant is freer, so a few common phrasings are accepted. This is a
+    heuristic, not an LLM judge; a false positive only affects the generation
+    metrics, never the retrieval ones.
+    """
+    head = answer.strip()[:200]
+    return any(marker in head for marker in _REFUSAL_MARKERS)
+
+
 def aggregate_metrics(
     results: list[dict[str, Any]],
     *,
@@ -501,6 +537,73 @@ def aggregate_metrics(
     metrics["avg_latency_ms"] = round(mean(latencies), 1) if latencies else 0.0
     metrics["p50_latency_ms"] = _percentile(latencies, 0.50)
     metrics["p95_latency_ms"] = _percentile(latencies, 0.95)
+
+    # Generation metrics only exist when the run enabled the optional answer
+    # pass; retrieval-only runs keep the exact same shape as before.
+    generation = [item for item in ok if "generation_latency_ms" in item["metrics"]]
+    if generation:
+        gen_answerable = [item for item in generation if item["answerable"]]
+        gen_unanswerable = [item for item in generation if not item["answerable"]]
+        answered = [
+            item
+            for item in gen_answerable
+            if not item["metrics"].get("answer_refused")
+        ]
+        metrics["generation_cases"] = len(generation)
+        metrics["generation_errors"] = sum(
+            1 for item in generation if item["metrics"].get("generation_error")
+        )
+        metrics["generation_refusal_accuracy"] = (
+            round(
+                mean(
+                    [
+                        1.0 if item["metrics"].get("answer_refused") else 0.0
+                        for item in gen_unanswerable
+                    ]
+                ),
+                4,
+            )
+            if gen_unanswerable
+            else 0.0
+        )
+        metrics["generation_false_refusal_rate"] = (
+            round(
+                mean(
+                    [
+                        1.0 if item["metrics"].get("answer_refused") else 0.0
+                        for item in gen_answerable
+                    ]
+                ),
+                4,
+            )
+            if gen_answerable
+            else 0.0
+        )
+        metrics["answer_citation_rate"] = (
+            round(
+                mean(
+                    [
+                        1.0 if item["metrics"].get("answer_grounded") else 0.0
+                        for item in answered
+                    ]
+                ),
+                4,
+            )
+            if answered
+            else 0.0
+        )
+        gen_latencies = [
+            float(item["metrics"].get("generation_latency_ms", 0.0))
+            for item in generation
+            if not item["metrics"].get("generation_error")
+        ]
+        metrics["avg_generation_latency_ms"] = (
+            round(mean(gen_latencies), 1) if gen_latencies else 0.0
+        )
+        metrics["generation_total_tokens"] = int(
+            sum(int(item["metrics"].get("generation_tokens", 0)) for item in generation)
+        )
+
     metrics["elapsed_seconds"] = round(elapsed_seconds, 2)
     return metrics
 
@@ -542,6 +645,9 @@ async def create_run(
         if base is None or base.dataset_id != dataset.id:
             raise BadRequestError("基线运行不属于该数据集")
 
+    if payload.include_generation and not get_settings().deepseek_api_key:
+        raise BadRequestError("未配置 LLM API key，无法运行生成评测")
+
     config = _effective_config(kb, payload)
     run = EvalRun(
         dataset_id=dataset.id,
@@ -552,6 +658,12 @@ async def create_run(
         metrics={},
         progress={"done": 0, "total": int(case_count or 0)},
         index_version=kb.index_version,
+        include_generation=payload.include_generation,
+        prompt_variant=(
+            (payload.prompt_variant or DEFAULT_PROMPT_VARIANT)
+            if payload.include_generation
+            else None
+        ),
     )
     db.add(run)
     await db.flush()
@@ -580,6 +692,63 @@ def _retrieved_summary(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]
         }
         for rank, candidate in enumerate(candidates, start=1)
     ]
+
+
+async def _generate_case(
+    question: str,
+    candidates: list[dict[str, Any]],
+    prompt_variant: str | None,
+) -> tuple[str | None, dict[str, Any]]:
+    """Answer one case and compute deterministic generation checks.
+
+    A generation failure is data, not a run failure: the retrieval metrics stay
+    valid and the error is attached to this case.
+    """
+    started = time.perf_counter()
+    if not candidates:
+        answer = REFUSAL_MESSAGE
+        stats = citation_stats(answer, 0, set())
+        return answer, {
+            "answer_refused": True,
+            "answer_grounded": False,
+            "answer_citation_markers": stats["markers"],
+            "answer_invalid_citations": stats["invalid_markers"],
+            "answer_citation_rate": 0.0,
+            "generation_latency_ms": int((time.perf_counter() - started) * 1000),
+            "generation_tokens": 0,
+        }
+
+    try:
+        answer, usage = await complete_answer(
+            question,
+            candidates,
+            [],
+            max_context_chars=get_settings().max_context_chars,
+            prompt_variant=prompt_variant,
+        )
+        answer = (answer or "").strip() or REFUSAL_MESSAGE
+    except Exception as exc:  # noqa: BLE001 - keep retrieval metrics intact
+        logger.exception("generation eval failed for question: %s", question)
+        return None, {
+            "generation_error": str(exc)[:300],
+            "generation_latency_ms": int((time.perf_counter() - started) * 1000),
+            "generation_tokens": 0,
+        }
+
+    cited = extract_citation_ranks(answer, len(candidates))
+    stats = citation_stats(answer, len(candidates), cited)
+    refused = looks_refused(answer)
+    return answer, {
+        "answer_refused": refused,
+        "answer_grounded": bool(
+            not refused and stats["markers"] > 0 and stats["invalid_markers"] == 0
+        ),
+        "answer_citation_markers": stats["markers"],
+        "answer_invalid_citations": stats["invalid_markers"],
+        "answer_citation_rate": stats["citation_rate"],
+        "generation_latency_ms": int((time.perf_counter() - started) * 1000),
+        "generation_tokens": int((usage or {}).get("total_tokens", 0)),
+    }
 
 
 async def execute_run(run_id: UUID) -> None:
@@ -621,17 +790,28 @@ async def execute_run(run_id: UUID) -> None:
                     break
 
                 case_started = time.perf_counter()
+                answer: str | None = None
                 try:
                     outcome = await retrieve(db, kb, case.question, config=config)
+                    # Retrieval latency stays separate from optional generation:
+                    # a slow LLM must not pollute recall/latency comparisons.
+                    latency_ms = int((time.perf_counter() - case_started) * 1000)
                     retrieved = _retrieved_summary(outcome.candidates)
                     metrics = score_case(retrieved, case.relevant_refs, case.answerable)
                     error = None
+                    if run.include_generation:
+                        answer, gen_metrics = await _generate_case(
+                            case.question,
+                            outcome.candidates,
+                            run.prompt_variant,
+                        )
+                        metrics.update(gen_metrics)
                 except Exception as exc:  # noqa: BLE001 - one bad case must not kill the run
                     logger.exception("eval case failed: %s", case.id)
+                    latency_ms = int((time.perf_counter() - case_started) * 1000)
                     retrieved = []
                     metrics = score_case([], case.relevant_refs, case.answerable)
                     error = str(exc)[:1000]
-                latency_ms = int((time.perf_counter() - case_started) * 1000)
 
                 db.add(
                     EvalResult(
@@ -644,6 +824,7 @@ async def execute_run(run_id: UUID) -> None:
                         metrics=metrics,
                         refused=bool(metrics["refused"]),
                         latency_ms=latency_ms,
+                        answer=answer,
                         error=error,
                     )
                 )

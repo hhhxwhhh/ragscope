@@ -459,3 +459,129 @@ async def test_stale_runs_are_recovered_but_fresh_ones_are_left_alone(
     assert stale_body.json()["status"] == "failed"
     assert "中断" in stale_body.json()["error"]
     assert fresh_body.json()["status"] == "pending"
+
+
+async def test_prompt_variants_endpoint_requires_auth_and_lists_choices(
+    client: AsyncClient, register: Any
+) -> None:
+    anonymous = await client.get("/api/v1/prompts")
+    assert anonymous.status_code == 401
+
+    _, headers = await register()
+    response = await client.get("/api/v1/prompts", headers=headers)
+    assert response.status_code == 200, response.text
+    variants = response.json()
+    ids = {item["id"] for item in variants}
+    assert {"grounded", "strict_citation", "structured"} <= ids
+    assert all(item["label"] and item["description"] for item in variants)
+
+
+async def test_generation_run_records_answer_and_metrics(
+    client: AsyncClient,
+    retrieval_fixture: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _add_case(client, retrieval_fixture, "X1 的续航多久？", 0)
+    await _add_case(client, retrieval_fixture, "X9 的保修政策是什么？", None, answerable=False)
+    monkeypatch.setattr(
+        eval_service, "retrieve", _fake_retrieve(retrieval_fixture["document_id"])
+    )
+    # The generation path is gated on a configured key; bypass the real .env.
+    monkeypatch.setattr(
+        eval_service,
+        "get_settings",
+        lambda: SimpleNamespace(deepseek_api_key="sk-test-only", max_context_chars=4000),
+    )
+
+    seen_variants: list[str | None] = []
+
+    async def fake_complete(
+        question: str,
+        candidates: list[dict[str, Any]],
+        history: list[tuple[str, str]],
+        *,
+        max_context_chars: int,
+        prompt_variant: str | None = None,
+    ) -> tuple[str, dict[str, int]]:
+        del question, candidates, history, max_context_chars
+        seen_variants.append(prompt_variant)
+        return "X1 在标准环境下续航十二小时 [1]。", {"total_tokens": 42}
+
+    monkeypatch.setattr(eval_service, "complete_answer", fake_complete)
+
+    started = await client.post(
+        f"{EVAL}/datasets/{retrieval_fixture['dataset_id']}/runs",
+        json={"include_generation": True, "prompt_variant": "strict_citation"},
+        headers=retrieval_fixture["headers"],
+    )
+    assert started.status_code == 202, started.text
+    run = await _wait_for_run(client, retrieval_fixture, started.json()["id"])
+
+    assert run["status"] == "completed"
+    assert run["include_generation"] is True
+    assert run["prompt_variant"] == "strict_citation"
+    # Retrieval metrics must survive the optional generation pass.
+    assert run["metrics"]["recall@1"] == 1.0
+    assert run["metrics"]["generation_cases"] == 2
+    assert run["metrics"]["generation_errors"] == 0
+    assert run["metrics"]["generation_refusal_accuracy"] == 1.0
+    assert run["metrics"]["generation_false_refusal_rate"] == 0.0
+    assert run["metrics"]["answer_citation_rate"] == 1.0
+    assert run["metrics"]["generation_total_tokens"] == 42
+    # Only the answerable case reaches the LLM: empty retrieval short-circuits
+    # to the fixed refusal, which keeps unanswerable cases free.
+    assert seen_variants == ["strict_citation"]
+
+    answerable_result = next(item for item in run["results"] if item["answerable"])
+    assert answerable_result["answer"] == "X1 在标准环境下续航十二小时 [1]。"
+    assert answerable_result["metrics"]["answer_grounded"] is True
+    assert answerable_result["metrics"]["answer_citation_markers"] == 1
+    unanswerable_result = next(item for item in run["results"] if not item["answerable"])
+    assert unanswerable_result["answer"] == "根据现有资料无法回答这个问题。"
+    assert unanswerable_result["metrics"]["answer_refused"] is True
+
+
+async def test_generation_run_requires_llm_key(
+    client: AsyncClient,
+    retrieval_fixture: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _add_case(client, retrieval_fixture, "X1 的续航多久？", 0)
+    monkeypatch.setattr(
+        eval_service,
+        "get_settings",
+        lambda: SimpleNamespace(deepseek_api_key=""),
+    )
+
+    response = await client.post(
+        f"{EVAL}/datasets/{retrieval_fixture['dataset_id']}/runs",
+        json={"include_generation": True},
+        headers=retrieval_fixture["headers"],
+    )
+
+    assert response.status_code == 400
+    assert "API key" in response.json()["detail"]
+
+
+async def test_retrieval_only_run_has_no_prompt_variant(
+    client: AsyncClient,
+    retrieval_fixture: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _add_case(client, retrieval_fixture, "X1 的续航多久？", 0)
+    monkeypatch.setattr(
+        eval_service, "retrieve", _fake_retrieve(retrieval_fixture["document_id"])
+    )
+
+    started = await client.post(
+        f"{EVAL}/datasets/{retrieval_fixture['dataset_id']}/runs",
+        json={"config": {"use_rerank": False}},
+        headers=retrieval_fixture["headers"],
+    )
+    assert started.status_code == 202, started.text
+    run = await _wait_for_run(client, retrieval_fixture, started.json()["id"])
+
+    assert run["include_generation"] is False
+    assert run["prompt_variant"] is None
+    assert "generation_cases" not in run["metrics"]
+    assert run["results"][0]["answer"] is None
