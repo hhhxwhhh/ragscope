@@ -63,7 +63,7 @@ async function submit(): Promise<void> {
         <span class="mark">R</span>
         <div>
           <h1>创建账号</h1>
-          <p>注册后即可创建自己的知识库</p>
+          <p>上传文档，搭建自己的知识库问答</p>
         </div>
       </div>
 

@@ -666,7 +666,10 @@ onMounted(scrollToBottom)
         <div v-if="!messages.length && !loadingMessages" class="welcome">
           <div class="welcome-mark">R</div>
           <h3>基于知识库回答，并标注来源</h3>
-          <p class="muted">每次回答都会记录改写后的 query、各阶段候选与耗时。</p>
+          <p class="muted">
+            适合售后与内部支持：先查产品手册和售后政策，再给出可追溯的答复。每次回答都会记录改写后的
+            query、各阶段候选与耗时。
+          </p>
           <div class="samples">
             <el-button
               v-for="question in sampleQuestions"

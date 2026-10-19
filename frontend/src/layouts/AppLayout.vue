@@ -53,7 +53,7 @@ async function handleLogout(): Promise<void> {
 
     <el-container>
       <el-header class="header">
-        <div class="header-title">知识库问答与检索评测台</div>
+        <div class="header-title">企业知识库问答与检索评测台</div>
         <div class="header-right">
           <span class="muted">{{ displayName }}</span>
           <el-button text :icon="SwitchButton" @click="handleLogout">退出</el-button>

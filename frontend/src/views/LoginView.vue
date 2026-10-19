@@ -53,7 +53,7 @@ async function submit(): Promise<void> {
         <span class="mark">R</span>
         <div>
           <h1>RAGScope</h1>
-          <p>知识库问答与检索评测台</p>
+          <p>企业知识库问答 · 售后知识助手</p>
         </div>
       </div>
 

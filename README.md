@@ -1,10 +1,16 @@
 # RAGScope
 
-企业知识库问答平台：上传内部文档，多轮问答并给出可追溯的引用；同时能看清每次检索到底发生了什么，并用固定评测集判断改配置是不是真的有用。
+企业知识库问答平台，演示场景是消费电子售后：把产品手册、售后政策和 FAQ 变成一线坐席可检索、可引用、可评测的知识底座；同时能看清每次检索到底发生了什么，并用固定评测集判断改配置是不是真的有用。
 
 这是一个面向 Python 后端实习的作品集项目。上传、切块、向量/BM25 混合检索、流式回答是 RAG 的常规链路；真正想讲清楚的是后半部分：**检索可观测性 + 评测工作台**。每次回答都记录改写后的 query、四个检索阶段的候选和耗时；任意一次检索可以固化成评测用例；不同检索配置在同一个数据集上跑，对比 recall@k、MRR、拒答率和延迟。
 
 检索与生成基于 **LangChain 1.x / LangGraph 1.x**：`ChatOpenAI` 接 DeepSeek，`HuggingFaceEmbeddings` + `Chroma` 适配现有索引，查询改写、多查询扩展和最终作答都是 LCEL 链，Agent 模式用 `create_agent` 编译 ReAct 状态图。BM25、RRF、cross-encoder 重排和检索 trace 仍由项目实现——这些正是需要精确拿到排名、分数和耗时的部分。产品形态参考了 [RAGFlow](https://github.com/infiniflow/ragflow) 的检索测试台、[Dify](https://github.com/langgenius/dify) 的知识库设计，指标定义参考 [RAGAS](https://github.com/explodinggradients/ragas)，但没有引入 LLM-as-judge。
+
+## 应用场景
+
+演示租户「星河科技」是一家消费电子公司。客服坐席在聊天页提问「X1 的续航是多久」「蒸桑拿进水还算保修吗」，回答以流式输出并带 `[n]` 引用，点开能看到具体文档、章节和页码；知识库运营展开检索 trace，判断问题出在改写、召回还是重排；质检把点踩回答一键转成评测用例，用固定数据集验证一次配置改动到底有没有效。
+
+三条角色链路共用同一套知识库和索引版本。完整的角色分工、四个演示剧本、指标口径和简历表述见 **[docs/use-case.md](docs/use-case.md)**。
 
 ## 现在能做什么
 
@@ -130,7 +136,7 @@ rag_learn/
 │   ├── views/               # Dashboard, KbDetail, Chat, EvalRun, EvalCompare
 │   └── types/
 ├── data/                    # 5 篇虚构的星河科技产品文档
-├── docs/                    # 架构、评测设计、面试题
+├── docs/                    # 应用场景、架构、评测设计、面试题
 ├── notebooks/learning/      # 最开始的手写 RAG notebook
 ├── deploy/nginx.conf        # SPA + /api 代理 + SSE 不缓冲
 ├── .github/workflows/ci.yml # 后端 ruff/pytest + 前端 typecheck/build
@@ -214,6 +220,7 @@ cd backend
 
 更细的设计说明：
 
+- [docs/use-case.md](docs/use-case.md)：应用场景、角色工作流、演示剧本、指标口径、简历表述
 - [docs/architecture.md](docs/architecture.md)：请求链路、数据模型、失败恢复、扩展路径
 - [docs/evaluation.md](docs/evaluation.md)：指标定义、拒答标定、实验方法、结果解读
 - [docs/interview-questions.md](docs/interview-questions.md)：15 个模块的面试题与参考要点
