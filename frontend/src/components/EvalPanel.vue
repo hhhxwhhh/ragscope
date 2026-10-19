@@ -11,11 +11,13 @@ import {
   createRun,
   deleteCase,
   deleteDataset,
+  getRoutingReport,
   getRun,
   listCases,
   listDatasets,
   listRuns,
   searchChunks,
+  updateCase,
 } from '@/api/eval'
 import type { RetrievalOverrides } from '@/api/eval'
 import type {
@@ -26,6 +28,7 @@ import type {
   EvalRunDetail,
   EvalRunStatus,
   RelevantRef,
+  RoutingReport,
 } from '@/types'
 
 const props = defineProps<{ kbId: string }>()
@@ -38,14 +41,22 @@ const runs = ref<EvalRun[]>([])
 const loading = ref(false)
 const caseLoading = ref(false)
 const runsLoading = ref(false)
-const activeTab = ref<'cases' | 'runs'>('cases')
+const activeTab = ref<'cases' | 'runs' | 'routing'>('cases')
 const caseFilter = ref('')
+const routingReport = ref<RoutingReport | null>(null)
+const routingLoading = ref(false)
+const routingOnlyMismatch = ref(false)
 
 const createDatasetVisible = ref(false)
 const datasetForm = reactive({ name: '', description: '' })
 
 const caseDialogVisible = ref(false)
-const caseForm = reactive({ question: '', answerable: true, notes: '' })
+const caseForm = reactive<{
+  question: string
+  answerable: boolean
+  expected_mode: 'rag' | 'agent' | ''
+  notes: string
+}>({ question: '', answerable: true, expected_mode: '', notes: '' })
 const refQuery = ref('')
 const refResults = ref<ChunkSearchItem[]>([])
 const refLoading = ref(false)
@@ -101,6 +112,11 @@ const filteredCases = computed(() => {
     return cases.value
   }
   return cases.value.filter((item) => item.question.toLowerCase().includes(keyword))
+})
+
+const filteredRoutingCases = computed(() => {
+  const items = routingReport.value?.cases || []
+  return routingOnlyMismatch.value ? items.filter((item) => item.correct === false) : items
 })
 
 const hasActiveRun = computed(() =>
@@ -195,6 +211,32 @@ async function loadCases(): Promise<void> {
   }
 }
 
+async function loadRoutingReport(): Promise<void> {
+  if (!activeDatasetId.value) {
+    routingReport.value = null
+    return
+  }
+  routingLoading.value = true
+  try {
+    routingReport.value = await getRoutingReport(activeDatasetId.value)
+  } finally {
+    routingLoading.value = false
+  }
+}
+
+function onExpectedModeChange(item: EvalCase, value: unknown): void {
+  const mode = value === 'rag' || value === 'agent' ? value : null
+  void labelCase(item, mode)
+}
+
+async function labelCase(item: EvalCase, value: 'rag' | 'agent' | null): Promise<void> {
+  const updated = await updateCase(item.id, { expected_mode: value ?? null })
+  item.expected_mode = updated.expected_mode
+  if (activeTab.value === 'routing') {
+    await loadRoutingReport()
+  }
+}
+
 async function loadRuns(showLoading = true): Promise<void> {
   if (!activeDatasetId.value) {
     runs.value = []
@@ -238,7 +280,11 @@ async function refreshAll(): Promise<void> {
   loading.value = true
   try {
     await loadDatasets()
-    await Promise.all([loadCases(), loadRuns(false)])
+    await Promise.all([
+      loadCases(),
+      loadRuns(false),
+      activeTab.value === 'routing' ? loadRoutingReport() : Promise.resolve(),
+    ])
   } finally {
     loading.value = false
   }
@@ -247,7 +293,12 @@ async function refreshAll(): Promise<void> {
 async function selectDataset(datasetId: string): Promise<void> {
   activeDatasetId.value = datasetId
   caseFilter.value = ''
-  await Promise.all([loadCases(), loadRuns()])
+  routingReport.value = null
+  await Promise.all([
+    loadCases(),
+    loadRuns(),
+    activeTab.value === 'routing' ? loadRoutingReport() : Promise.resolve(),
+  ])
 }
 
 function openCreateDataset(): void {
@@ -298,6 +349,7 @@ async function removeDataset(): Promise<void> {
 function openCaseDialog(): void {
   caseForm.question = ''
   caseForm.answerable = true
+  caseForm.expected_mode = ''
   caseForm.notes = ''
   refQuery.value = ''
   refResults.value = []
@@ -338,6 +390,7 @@ async function submitCase(): Promise<void> {
       question,
       answerable: caseForm.answerable,
       relevant_refs: caseForm.answerable ? selectedRefs.value : [],
+      expected_mode: caseForm.expected_mode || null,
       notes: caseForm.notes.trim() || null,
     })
     caseDialogVisible.value = false
@@ -473,9 +526,16 @@ watch(
     if (!value) {
       cases.value = []
       runs.value = []
+      routingReport.value = null
     }
   },
 )
+
+watch(activeTab, (value) => {
+  if (value === 'routing') {
+    loadRoutingReport().catch(() => undefined)
+  }
+})
 
 onUnmounted(stopPolling)
 </script>
@@ -563,6 +623,21 @@ onUnmounted(stopPolling)
                 <el-tag :type="row.answerable ? 'success' : 'info'" size="small">
                   {{ row.answerable ? '可答' : '不可答' }}
                 </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="期望路径" width="130">
+              <template #default="{ row }">
+                <el-select
+                  :model-value="row.expected_mode"
+                  size="small"
+                  clearable
+                  placeholder="未标注"
+                  style="width: 104px"
+                  @change="onExpectedModeChange(row, $event)"
+                >
+                  <el-option label="快速 RAG" value="rag" />
+                  <el-option label="Agent" value="agent" />
+                </el-select>
               </template>
             </el-table-column>
             <el-table-column label="相关 chunk" min-width="220">
@@ -675,6 +750,127 @@ onUnmounted(stopPolling)
           </el-table>
           <el-empty v-if="!runsLoading && !runs.length" description="还没有运行记录" />
         </el-tab-pane>
+
+        <el-tab-pane label="路由评测" name="routing">
+          <div v-loading="routingLoading" class="routing-pane">
+            <div class="tab-toolbar routing-toolbar">
+              <span class="muted">
+                给用例标注期望路径后，这里会对比自动路由的判断；规则是确定性的，不调用模型
+              </span>
+              <div class="routing-actions">
+                <el-checkbox v-model="routingOnlyMismatch">只看不一致</el-checkbox>
+                <el-button size="small" @click="loadRoutingReport">刷新</el-button>
+              </div>
+            </div>
+
+            <el-empty
+              v-if="!routingLoading && !routingReport"
+              description="暂无路由报告"
+            />
+            <template v-else-if="routingReport">
+              <div class="routing-metrics">
+                <div class="routing-metric">
+                  <span class="metric-value">{{ formatPct(routingReport.accuracy) }}</span>
+                  <span class="metric-label muted">路由准确率</span>
+                </div>
+                <div class="routing-metric">
+                  <span class="metric-value">{{ formatPct(routingReport.agent_precision) }}</span>
+                  <span class="metric-label muted">Agent 精确率</span>
+                </div>
+                <div class="routing-metric">
+                  <span class="metric-value">{{ formatPct(routingReport.agent_recall) }}</span>
+                  <span class="metric-label muted">Agent 召回率</span>
+                </div>
+                <div class="routing-metric">
+                  <span class="metric-value">{{ formatPct(routingReport.agent_f1) }}</span>
+                  <span class="metric-label muted">Agent F1</span>
+                </div>
+                <div class="routing-metric">
+                  <span class="metric-value">
+                    {{ formatPct(routingReport.predicted_agent_rate) }}
+                  </span>
+                  <span class="metric-label muted">预测升级率</span>
+                </div>
+                <div class="routing-metric">
+                  <span class="metric-value">
+                    {{ routingReport.labeled }}/{{ routingReport.total }}
+                  </span>
+                  <span class="metric-label muted">已标注 / 全部</span>
+                </div>
+              </div>
+
+              <div class="confusion-grid">
+                <div class="confusion-cell">
+                  <span class="muted">期望 RAG → 预测 RAG</span>
+                  <strong>{{ routingReport.confusion['rag->rag'] }}</strong>
+                </div>
+                <div class="confusion-cell wrong">
+                  <span class="muted">期望 RAG → 预测 Agent</span>
+                  <strong>{{ routingReport.confusion['rag->agent'] }}</strong>
+                </div>
+                <div class="confusion-cell wrong">
+                  <span class="muted">期望 Agent → 预测 RAG</span>
+                  <strong>{{ routingReport.confusion['agent->rag'] }}</strong>
+                </div>
+                <div class="confusion-cell">
+                  <span class="muted">期望 Agent → 预测 Agent</span>
+                  <strong>{{ routingReport.confusion['agent->agent'] }}</strong>
+                </div>
+              </div>
+
+              <el-table :data="filteredRoutingCases" size="small">
+                <el-table-column prop="question" label="问题" min-width="260" />
+                <el-table-column label="期望" width="90">
+                  <template #default="{ row }">
+                    <el-tag v-if="row.expected_mode" size="small" effect="plain">
+                      {{ row.expected_mode === 'agent' ? 'Agent' : 'RAG' }}
+                    </el-tag>
+                    <span v-else class="muted">未标注</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="预测" width="90">
+                  <template #default="{ row }">
+                    <el-tag
+                      size="small"
+                      :type="row.predicted_mode === 'agent' ? 'warning' : 'info'"
+                    >
+                      {{ row.predicted_mode === 'agent' ? 'Agent' : 'RAG' }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="结果" width="80">
+                  <template #default="{ row }">
+                    <el-tag v-if="row.correct === true" type="success" size="small">一致</el-tag>
+                    <el-tag v-else-if="row.correct === false" type="danger" size="small">
+                      不一致
+                    </el-tag>
+                    <span v-else class="muted">—</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="命中信号" min-width="160">
+                  <template #default="{ row }">
+                    <span v-if="!row.signals.length" class="muted">—</span>
+                    <el-tag
+                      v-for="signal in row.signals"
+                      v-else
+                      :key="signal"
+                      size="small"
+                      type="info"
+                      class="ref-tag"
+                    >
+                      {{ signal }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="reason" label="路由原因" min-width="220" />
+              </el-table>
+              <el-empty
+                v-if="!filteredRoutingCases.length"
+                :description="routingOnlyMismatch ? '没有不一致的用例' : '还没有用例'"
+              />
+            </template>
+          </div>
+        </el-tab-pane>
       </el-tabs>
     </template>
 
@@ -711,6 +907,13 @@ onUnmounted(stopPolling)
           <el-radio-group v-model="caseForm.answerable">
             <el-radio :value="true">可回答（需要标注相关 chunk）</el-radio>
             <el-radio :value="false">不可回答（应触发拒答）</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="期望路径（用于路由评测，可选）">
+          <el-radio-group v-model="caseForm.expected_mode">
+            <el-radio value="">未标注</el-radio>
+            <el-radio value="rag">快速 RAG</el-radio>
+            <el-radio value="agent">Agent</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="备注">
@@ -1143,5 +1346,74 @@ onUnmounted(stopPolling)
   margin-top: 8px;
   color: #dc2626;
   font-size: 12px;
+}
+
+.routing-pane {
+  min-height: 180px;
+}
+
+.routing-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.routing-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.routing-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin: 4px 0 12px;
+}
+
+.routing-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.routing-metric .metric-value {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.routing-metric .metric-label {
+  font-size: 12px;
+}
+
+.confusion-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.confusion-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 9px;
+  font-size: 12px;
+}
+
+.confusion-cell.wrong {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.confusion-cell strong {
+  font-size: 15px;
 }
 </style>

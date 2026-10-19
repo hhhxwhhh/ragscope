@@ -19,6 +19,15 @@ KB_NAME = "星河科技产品库"
 DATASET_NAME = "演示评测集 v1"
 DATASET_DESCRIPTION = "基于星河科技演示文档的 29 条检索用例，含 5 条不可答问题。"
 
+# Questions that genuinely need evidence from more than one retrieval hop.
+# Everything else in the demo set is a single-document fact/policy question.
+# Labels are human judgments, not router output: the routing report should be
+# able to surface disagreements in both directions.
+AGENT_EXPECTED_QUESTIONS = {
+    "X1 和 X2 的屏幕有什么区别？",
+    "充电器丢了怎么办，X1 和 X2 的充电底座通用吗？",
+}
+
 # (question, [(filename, chunk_index), ...], answerable)
 CASES: list[tuple[str, list[tuple[str, int]], bool]] = [
     ("星河科技是什么时候成立的，总部在哪里？", [("01_公司介绍.md", 0)], True),
@@ -102,7 +111,14 @@ async def seed_eval_dataset(
                 RelevantRef(document_id=document_id, chunk_index=chunk_no, filename=filename)
             )
         payloads.append(
-            EvalCaseCreate(question=question, relevant_refs=relevant_refs, answerable=answerable)
+            EvalCaseCreate(
+                question=question,
+                relevant_refs=relevant_refs,
+                answerable=answerable,
+                expected_mode=(
+                    "agent" if question in AGENT_EXPECTED_QUESTIONS else "rag"
+                ),
+            )
         )
 
     cases = await eval_service.create_cases(db, dataset, payloads)

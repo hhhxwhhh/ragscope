@@ -66,6 +66,9 @@ class EvalCase(Base):
         JSONB, default=list, server_default=text("'[]'::jsonb")
     )
     answerable: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    # Human label for auto routing: "rag" or "agent". Null means unlabelled and
+    # is excluded from routing accuracy/precision/recall.
+    expected_mode: Mapped[str | None] = mapped_column(String(10), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

@@ -37,7 +37,8 @@
 - 运维接口：`/healthz` 存活检查，`/readyz` 同时检查 PostgreSQL / Redis / Chroma；请求带 `X-Request-ID` 和耗时头
 - 检索调试台：向量 / BM25 / RRF / 重排四组候选，分阶段耗时瀑布，单次请求覆盖检索参数，显示多查询扩展与缓存命中情况，一键保存为评测用例
 - 评测工作台：数据集与 chunk 级标注、配置预设、后台执行与进度、运行取消、逐条结果、两次运行对比
-- Dashboard：知识库 / 文档 / chunk / 会话 / 评测 KPI，用户满意度、引用有效率，14 天活动趋势，最近评测结果
+- 路由评测：用例可标注期望路径（`rag` / `agent`），按确定性路由器的实际输出计算准确率、Agent 类别的 precision / recall / F1 和混淆矩阵；未标注用例只展示预测，不污染指标
+- Dashboard：知识库 / 文档 / chunk / 会话 / 评测 KPI，Agent 运行成功率、平均步数 / 工具调用 / 耗时 / token，用户满意度、引用有效率，14 天活动趋势，最近评测结果
 
 ## 一次检索的链路
 
@@ -112,6 +113,20 @@ Agent 路径用 `langchain.agents.create_agent` 编译一张 LangGraph ReAct 状
 拒答指标在调参前只有 20%。原因是 BM25 没有绝对分数阈值，`如何申请美国旅游签证？` 会因为「申请」两个字匹配到售后文档，`杭州明天会下雨吗？` 会匹配到「天」。最后的处理是：向量分数下限从 0.35 提到 0.45，并且**只有存在过阈值的向量候选时才启用 BM25**。可答案例的最高分最低为 0.497，不可答案例的最高分为 0.382，0.45 正好落在中间。拒答准确率变成 100%，24 条可答案例没有一条被误拒。
 
 > 样本只有 29 条，差异小于 5 个点不应该当成结论，README 里保留这些数字主要是为了说明流程，而不是证明某组参数最优。
+
+### 路由评测
+
+同一份 29 条用例还标注了「期望走哪条路」：27 条标 `rag`（其中 3 条是不可答案例），2 条需要跨文档比较或多步检索的问题标 `agent`。在「路由评测」页：
+
+| 指标 | 数值 |
+|---|---:|
+| 路由准确率 | 96.6%（28 / 29） |
+| Agent precision | 66.7% |
+| Agent recall | 100% |
+| Agent F1 | 80.0% |
+| 预测 Agent 比例 | 10.3%（3 / 29） |
+
+混淆矩阵是 `rag→rag 26`、`rag→agent 1`、`agent→rag 0`、`agent→agent 2`。唯一的误判是「手表进水导致的故障能保修吗？」：规则里的 `导致` 本来是给多步故障排查准备的多跳信号，但这句话只需要查一段售后政策，因此被过度升级到了 Agent。把这条留在数据集里而不是调规则把它藏掉，是因为路由评测的价值就是暴露这种偏差；如果改规则，也应该重跑这份报告确认没有把真正的多跳问题一起降级。
 
 ## 技术栈
 
@@ -222,6 +237,7 @@ docker compose -f docker-compose.prod.yml exec api python scripts/seed_demo.py
 - 可答案例算 Recall@1/3/5/10、Hit@5、MRR；不可答案例只算拒答准确率；另有可答案例误拒答率
 - 出错用例保留在结果里，但不参与质量指标的平均；延迟用 p50 / p95，避免长尾把均值带偏
 - 默认 retrieval-only，跑 29 条用例零 API 成本；以后可以加 `include_generation` 做人工抽检，但不做 LLM judge
+- 路由评测与检索评测共用用例，但完全独立：`expected_mode` 可选，未标注的用例不进准确率；预测只调用纯函数路由器，不检索、不调模型，报告可以随开随看
 - 执行器在 FastAPI BackgroundTasks 中跑，每条用例独立提交、更新进度；取消时保留已完成部分
 
 ## 测试与 CI
@@ -232,7 +248,7 @@ cd backend
 .venv/Scripts/python.exe -m pytest -q
 ```
 
-- 91 个测试，`tests/unit` 覆盖解析器（Markdown / DOCX / 空白 PDF）、页码映射、切块、RRF、指标计算、JWT、多查询解析、检索缓存 key、引用统计、自动路由信号与回退，以及用脚本化 fake model 跑真实 LangGraph 图验证 Agent 工具调用、参数校验、证据去重、步数预算、token 汇总与模型失败时的 fail-open；`tests/integration` 覆盖注册/登录/刷新轮换/登出、登录限流、知识库越权 404、评测数据集校验、后台执行器、运行对比、stale 运行恢复、反馈增删改与转评测用例、会话搜索/重命名/导出，以及未配置 LLM key 时 Agent / auto 接口的 503。
+- 99 个测试，`tests/unit` 覆盖解析器（Markdown / DOCX / 空白 PDF）、页码映射、切块、RRF、指标计算、路由报告（准确率 / precision / recall / F1 / 混淆矩阵 / 未标注处理）、JWT、多查询解析、检索缓存 key、引用统计、自动路由信号与回退，以及用脚本化 fake model 跑真实 LangGraph 图验证 Agent 工具调用、参数校验、证据去重、步数预算、token 汇总与模型失败时的 fail-open；`tests/integration` 覆盖注册/登录/刷新轮换/登出、登录限流、知识库越权 404、评测数据集校验、期望路径的 PATCH 语义与路由报告、后台执行器、运行对比、stale 运行恢复、反馈增删改与转评测用例、会话搜索/重命名/导出，以及未配置 LLM key 时 Agent / auto 接口的 503。
 - 集成测试使用独立数据库 `ragscope_test` 和 Redis DB 1；session 开始时自动建库并跑迁移，每个测试前清空表和 Redis。
 - 评测执行器测试 mock 掉 `retrieve`，CI 只装 `.[dev]`，不需要下载 torch。
 - GitHub Actions 分两个 job：后端 ruff + pytest（PostgreSQL/Redis service），前端 typecheck + build。配置在 [.github/workflows/ci.yml](.github/workflows/ci.yml)。

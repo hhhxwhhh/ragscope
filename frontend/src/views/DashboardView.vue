@@ -7,6 +7,8 @@ import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/compon
 import { CanvasRenderer } from 'echarts/renderers'
 import {
   Collection,
+  Connection,
+  Cpu,
   DataAnalysis,
   Document,
   Histogram,
@@ -63,6 +65,20 @@ const kpis = computed(() => {
       color: '#059669',
     },
     {
+      label: 'Agent 运行',
+      value: data?.agent_run_count ?? 0,
+      hint: `成功率 ${formatPct(data?.agent_success_rate ?? null)} · ${data?.agent_completed_count ?? 0} 次完成`,
+      icon: Connection,
+      color: '#0ea5e9',
+    },
+    {
+      label: 'Agent 平均步数',
+      value: (data?.agent_avg_steps ?? 0).toFixed(1),
+      hint: `${(data?.agent_avg_tool_calls ?? 0).toFixed(1)} 次调用 · ${formatDuration(data?.agent_avg_latency_ms ?? 0)} · ${formatTokens(data?.agent_total_tokens)} tokens`,
+      icon: Cpu,
+      color: '#f97316',
+    },
+    {
       label: '评测覆盖',
       value: `${data?.eval_case_count ?? 0}/${data?.eval_run_count ?? 0}`,
       hint: '用例数 / 运行次数',
@@ -86,10 +102,16 @@ const kpis = computed(() => {
   ]
 })
 
-const avgLatency = computed(() => {
-  const ms = summary.value?.avg_latency_ms || 0
+const avgLatency = computed(() => formatDuration(summary.value?.avg_latency_ms || 0))
+
+function formatDuration(ms: number): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${ms.toFixed(0)} ms`
-})
+}
+
+function formatTokens(value: number | undefined): string {
+  const tokens = value ?? 0
+  return tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : `${tokens}`
+}
 
 const activeRuns = computed(() =>
   (summary.value?.recent_runs || []).filter(

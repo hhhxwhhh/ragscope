@@ -303,6 +303,113 @@ async def test_other_users_cannot_access_eval_resources(
     assert run.status_code == 404
 
 
+async def test_case_expected_mode_can_be_set_and_cleared(
+    client: AsyncClient, retrieval_fixture: dict[str, Any]
+) -> None:
+    case = await _add_case(client, retrieval_fixture, "X1 的续航多久？", 0)
+    assert case["expected_mode"] is None
+    url = f"{EVAL}/cases/{case['id']}"
+
+    labelled = await client.patch(
+        url, json={"expected_mode": "agent"}, headers=retrieval_fixture["headers"]
+    )
+    assert labelled.status_code == 200, labelled.text
+    assert labelled.json()["expected_mode"] == "agent"
+
+    # PATCH without the field must not clear an existing label.
+    untouched = await client.patch(url, json={}, headers=retrieval_fixture["headers"])
+    assert untouched.status_code == 200, untouched.text
+    assert untouched.json()["expected_mode"] == "agent"
+
+    cleared = await client.patch(
+        url, json={"expected_mode": None}, headers=retrieval_fixture["headers"]
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["expected_mode"] is None
+
+
+async def test_create_case_accepts_expected_mode(
+    client: AsyncClient, retrieval_fixture: dict[str, Any]
+) -> None:
+    response = await client.post(
+        f"{EVAL}/datasets/{retrieval_fixture['dataset_id']}/cases",
+        json={
+            "question": "这条用例在建的时候就标好路径",
+            "relevant_refs": [],
+            "answerable": False,
+            "expected_mode": "agent",
+        },
+        headers=retrieval_fixture["headers"],
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["expected_mode"] == "agent"
+
+
+async def test_routing_report_scores_labelled_cases(
+    client: AsyncClient, retrieval_fixture: dict[str, Any]
+) -> None:
+    rag_case = await _add_case(client, retrieval_fixture, "X1 的续航多久？", 0)
+    agent_case = await _add_case(
+        client, retrieval_fixture, "X1 和 X2 的屏幕有什么区别？", 1
+    )
+    for case, mode in ((rag_case, "rag"), (agent_case, "agent")):
+        patched = await client.patch(
+            f"{EVAL}/cases/{case['id']}",
+            json={"expected_mode": mode},
+            headers=retrieval_fixture["headers"],
+        )
+        assert patched.status_code == 200, patched.text
+
+    response = await client.get(
+        f"{EVAL}/datasets/{retrieval_fixture['dataset_id']}/routing-report",
+        headers=retrieval_fixture["headers"],
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["dataset_id"] == retrieval_fixture["dataset_id"]
+    assert body["total"] == 2
+    assert body["labeled"] == 2
+    assert body["unlabeled"] == 0
+    assert body["accuracy"] == 1.0
+    assert body["agent_precision"] == 1.0
+    assert body["agent_recall"] == 1.0
+    assert body["agent_f1"] == 1.0
+    assert body["confusion"]["agent->agent"] == 1
+    assert body["confusion"]["rag->rag"] == 1
+    assert {case["predicted_mode"] for case in body["cases"]} == {"rag", "agent"}
+    agent_case_out = next(
+        case for case in body["cases"] if case["question"] == "X1 和 X2 的屏幕有什么区别？"
+    )
+    assert "comparison" in agent_case_out["signals"]
+    assert agent_case_out["correct"] is True
+
+
+async def test_other_users_cannot_patch_cases_or_read_routing_report(
+    client: AsyncClient, retrieval_fixture: dict[str, Any], register: Any
+) -> None:
+    await _add_case(client, retrieval_fixture, "X1 的续航多久？", 0)
+    cases = await client.get(
+        f"{EVAL}/datasets/{retrieval_fixture['dataset_id']}/cases",
+        headers=retrieval_fixture["headers"],
+    )
+    case_id = cases.json()["items"][0]["id"]
+    _, stranger_headers = await register(email="routing-stranger@example.com")
+
+    patched = await client.patch(
+        f"{EVAL}/cases/{case_id}",
+        json={"expected_mode": "agent"},
+        headers=stranger_headers,
+    )
+    report = await client.get(
+        f"{EVAL}/datasets/{retrieval_fixture['dataset_id']}/routing-report",
+        headers=stranger_headers,
+    )
+
+    assert patched.status_code == 404
+    assert report.status_code == 404
+
+
 async def test_stale_runs_are_recovered_but_fresh_ones_are_left_alone(
     client: AsyncClient, retrieval_fixture: dict[str, Any]
 ) -> None:

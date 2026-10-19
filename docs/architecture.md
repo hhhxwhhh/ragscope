@@ -136,6 +136,10 @@ POST /eval/datasets/{id}/runs
 
 评测只跑到重排为止，不调用 LLM，所以是确定性的、零 API 成本的。运行进度存在 `eval_runs.progress`，前端轮询 `GET /eval/runs/{id}`。
 
+路由评测是另一条更轻的路径：`GET /eval/datasets/{id}/routing-report` 读取用例的 `expected_mode`，对每个问题调用纯函数 `choose_mode`，现场计算准确率、Agent P/R/F1 和混淆矩阵。它不写 run、不排队、不检索、不加载模型；未标注用例只返回预测，不进入指标。`PATCH /eval/cases/{id}` 用 `model_fields_set` 区分「没传」和「显式传 null」，因此可以单独清除路径标注而不影响其他字段。
+
+Dashboard 的 Agent 指标直接聚合 `agent_runs`：运行数、完成率、平均步数、平均工具调用、平均耗时和 token 总量。查询通过知识库 ownership 子查询限制在当前用户，不新增汇总表；数据量增长后可以再考虑定时物化。
+
 ### 5. 反馈闭环
 
 ```text

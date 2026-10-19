@@ -30,7 +30,8 @@ from app.models.evaluation import (
 )
 from app.models.knowledge_base import KnowledgeBase
 from app.rag.pipeline import RetrievalConfig, retrieve
-from app.schemas.eval import EvalCaseCreate, EvalRunCreate, RelevantRef
+from app.rag.router import choose_mode
+from app.schemas.eval import EvalCaseCreate, EvalCaseUpdate, EvalRunCreate, RelevantRef
 
 logger = logging.getLogger(__name__)
 
@@ -247,9 +248,24 @@ async def create_case(
         question=payload.question,
         relevant_refs=refs,
         answerable=payload.answerable,
+        expected_mode=payload.expected_mode,
         notes=payload.notes,
     )
     db.add(case)
+    await db.flush()
+    return case
+
+
+async def update_case(
+    db: AsyncSession,
+    case: EvalCase,
+    payload: EvalCaseUpdate,
+) -> EvalCase:
+    # PATCH semantics: only touch fields the client actually sent, so an
+    # omitted expected_mode keeps the existing label while an explicit null
+    # clears it.
+    if "expected_mode" in payload.model_fields_set:
+        case.expected_mode = payload.expected_mode
     await db.flush()
     return case
 
@@ -267,6 +283,118 @@ async def create_cases(
 
 async def delete_case(db: AsyncSession, case: EvalCase) -> None:
     await db.delete(case)
+
+
+# ---------------------------------------------------------------------------
+# Routing evaluation
+# ---------------------------------------------------------------------------
+
+
+def build_routing_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Compare the auto router against human route labels.
+
+    This is deterministic and free: no retrieval, no model call, no background
+    job. ``rows`` items carry case_id, question, answerable and expected_mode.
+    """
+    confusion = {"rag->rag": 0, "rag->agent": 0, "agent->rag": 0, "agent->agent": 0}
+    cases: list[dict[str, Any]] = []
+    total = len(rows)
+    labeled = 0
+    correct = 0
+    predicted_agent = 0
+    expected_agent = 0
+    true_positive = 0
+    false_positive = 0
+    false_negative = 0
+
+    for row in rows:
+        decision = choose_mode(str(row["question"]))
+        expected = row.get("expected_mode")
+        if expected not in ("rag", "agent"):
+            expected = None
+        predicted = decision.mode
+        if predicted == "agent":
+            predicted_agent += 1
+        is_correct: bool | None = None
+        if expected is not None:
+            labeled += 1
+            is_correct = predicted == expected
+            if is_correct:
+                correct += 1
+            if expected == "agent":
+                expected_agent += 1
+            confusion[f"{expected}->{predicted}"] += 1
+            if expected == "agent" and predicted == "agent":
+                true_positive += 1
+            elif expected == "rag" and predicted == "agent":
+                false_positive += 1
+            elif expected == "agent" and predicted == "rag":
+                false_negative += 1
+
+        cases.append(
+            {
+                "case_id": row["case_id"],
+                "question": row["question"],
+                "answerable": bool(row["answerable"]),
+                "expected_mode": expected,
+                "predicted_mode": predicted,
+                "correct": is_correct,
+                "signals": list(decision.signals),
+                "reason": decision.reason,
+            }
+        )
+
+    precision = (
+        true_positive / (true_positive + false_positive)
+        if true_positive + false_positive
+        else None
+    )
+    recall = (
+        true_positive / (true_positive + false_negative)
+        if true_positive + false_negative
+        else None
+    )
+    f1 = (
+        2 * precision * recall / (precision + recall)
+        if precision is not None and recall is not None and precision + recall
+        else None
+    )
+    return {
+        "total": total,
+        "labeled": labeled,
+        "unlabeled": total - labeled,
+        "accuracy": round(correct / labeled, 4) if labeled else None,
+        "agent_precision": round(precision, 4) if precision is not None else None,
+        "agent_recall": round(recall, 4) if recall is not None else None,
+        "agent_f1": round(f1, 4) if f1 is not None else None,
+        "predicted_agent_rate": round(predicted_agent / total, 4) if total else 0.0,
+        "expected_agent_rate": round(expected_agent / labeled, 4) if labeled else None,
+        "confusion": confusion,
+        "cases": cases,
+    }
+
+
+async def routing_report(db: AsyncSession, dataset: EvalDataset) -> dict[str, Any]:
+    cases = (
+        await db.scalars(
+            select(EvalCase)
+            .where(EvalCase.dataset_id == dataset.id)
+            .order_by(EvalCase.created_at, EvalCase.question)
+        )
+    ).all()
+    report = build_routing_report(
+        [
+            {
+                "case_id": case.id,
+                "question": case.question,
+                "answerable": case.answerable,
+                "expected_mode": case.expected_mode,
+            }
+            for case in cases
+        ]
+    )
+    report["dataset_id"] = dataset.id
+    return report
 
 
 # ---------------------------------------------------------------------------

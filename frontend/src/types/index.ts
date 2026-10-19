@@ -265,9 +265,36 @@ export interface EvalCase {
   question: string
   relevant_refs: RelevantRef[]
   answerable: boolean
+  expected_mode: 'rag' | 'agent' | null
   notes: string | null
   created_at: string
   updated_at: string
+}
+
+export interface RoutingCase {
+  case_id: string
+  question: string
+  answerable: boolean
+  expected_mode: 'rag' | 'agent' | null
+  predicted_mode: 'rag' | 'agent'
+  correct: boolean | null
+  signals: string[]
+  reason: string
+}
+
+export interface RoutingReport {
+  dataset_id: string
+  total: number
+  labeled: number
+  unlabeled: number
+  accuracy: number | null
+  agent_precision: number | null
+  agent_recall: number | null
+  agent_f1: number | null
+  predicted_agent_rate: number
+  expected_agent_rate: number | null
+  confusion: Record<string, number>
+  cases: RoutingCase[]
 }
 
 export interface RetrievedItem {
@@ -361,6 +388,13 @@ export interface DashboardSummary {
   chunk_count: number
   conversation_count: number
   message_count: number
+  agent_run_count: number
+  agent_completed_count: number
+  agent_success_rate: number
+  agent_avg_steps: number
+  agent_avg_tool_calls: number
+  agent_avg_latency_ms: number
+  agent_total_tokens: number
   eval_dataset_count: number
   eval_case_count: number
   eval_run_count: number

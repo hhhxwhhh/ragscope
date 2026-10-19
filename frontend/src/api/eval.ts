@@ -8,12 +8,14 @@ import type {
   EvalRunDetail,
   Page,
   RelevantRef,
+  RoutingReport,
 } from '@/types'
 
 export interface EvalCasePayload {
   question: string
   relevant_refs: RelevantRef[]
   answerable: boolean
+  expected_mode?: 'rag' | 'agent' | null
   notes?: string | null
 }
 
@@ -87,8 +89,23 @@ export async function bulkCreateCases(
   return data
 }
 
+export async function updateCase(
+  caseId: string,
+  payload: { expected_mode: 'rag' | 'agent' | null },
+): Promise<EvalCase> {
+  const { data } = await api.patch<EvalCase>(`/eval/cases/${caseId}`, payload)
+  return data
+}
+
 export async function deleteCase(caseId: string): Promise<void> {
   await api.delete(`/eval/cases/${caseId}`)
+}
+
+export async function getRoutingReport(datasetId: string): Promise<RoutingReport> {
+  const { data } = await api.get<RoutingReport>(
+    `/eval/datasets/${datasetId}/routing-report`,
+  )
+  return data
 }
 
 export async function listRuns(

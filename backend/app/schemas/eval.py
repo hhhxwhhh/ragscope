@@ -37,6 +37,9 @@ class EvalCaseCreate(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     relevant_refs: list[RelevantRef] = Field(default_factory=list)
     answerable: bool = True
+    # Optional human label used by the routing report. Null keeps the case out
+    # of routing accuracy, precision and recall.
+    expected_mode: Literal["rag", "agent"] | None = None
     notes: str | None = Field(default=None, max_length=1000)
 
     @model_validator(mode="after")
@@ -60,9 +63,14 @@ class EvalCaseOut(BaseModel):
     question: str
     relevant_refs: list[dict[str, Any]]
     answerable: bool
+    expected_mode: Literal["rag", "agent"] | None
     notes: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class EvalCaseUpdate(BaseModel):
+    expected_mode: Literal["rag", "agent"] | None = None
 
 
 class EvalRunCreate(BaseModel):
@@ -137,3 +145,32 @@ class EvalCompareOut(BaseModel):
     improved: int
     degraded: int
     unchanged: int
+
+
+class RoutingCaseOut(BaseModel):
+    case_id: UUID
+    question: str
+    answerable: bool
+    expected_mode: Literal["rag", "agent"] | None
+    predicted_mode: Literal["rag", "agent"]
+    correct: bool | None
+    signals: list[str]
+    reason: str
+
+
+class RoutingReportOut(BaseModel):
+    dataset_id: UUID
+    total: int
+    labeled: int
+    unlabeled: int
+    # None when there are no labelled cases (the report is still useful for
+    # inspecting predictions and the agent escalation rate).
+    accuracy: float | None
+    agent_precision: float | None
+    agent_recall: float | None
+    agent_f1: float | None
+    predicted_agent_rate: float
+    expected_agent_rate: float | None
+    # Keys: rag->rag, rag->agent, agent->rag, agent->agent.
+    confusion: dict[str, int]
+    cases: list[RoutingCaseOut]

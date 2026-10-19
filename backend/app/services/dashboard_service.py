@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import Date, Float, Integer, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.agent import AgentRun
 from app.models.chunk import Chunk
 from app.models.conversation import Conversation
 from app.models.document import Document, DocumentStatus
@@ -50,6 +51,24 @@ async def summary(db: AsyncSession, user_id: UUID) -> DashboardSummary:
         .join(Conversation, Message.conversation_id == Conversation.id)
         .where(Conversation.user_id == user_id)
     )
+    agent_row = (
+        await db.execute(
+            select(
+                func.count(AgentRun.id),
+                func.count(AgentRun.id).filter(AgentRun.status == "completed"),
+                func.avg(AgentRun.step_count),
+                func.avg(AgentRun.tool_calls),
+                func.avg(AgentRun.latency_ms),
+                func.coalesce(
+                    func.sum(cast(AgentRun.token_usage["total_tokens"].astext, Integer)),
+                    0,
+                ),
+            ).where(AgentRun.kb_id.in_(kb_ids))
+        )
+    ).one()
+    agent_run_count = int(agent_row[0] or 0)
+    agent_completed_count = int(agent_row[1] or 0)
+
     eval_dataset_count = await db.scalar(
         select(func.count()).select_from(EvalDataset).where(EvalDataset.kb_id.in_(kb_ids))
     )
@@ -139,6 +158,15 @@ async def summary(db: AsyncSession, user_id: UUID) -> DashboardSummary:
         chunk_count=int(chunk_count or 0),
         conversation_count=int(conversation_count or 0),
         message_count=int(message_count or 0),
+        agent_run_count=agent_run_count,
+        agent_completed_count=agent_completed_count,
+        agent_success_rate=(
+            round(agent_completed_count / agent_run_count, 4) if agent_run_count else 0.0
+        ),
+        agent_avg_steps=round(float(agent_row[2] or 0), 2),
+        agent_avg_tool_calls=round(float(agent_row[3] or 0), 2),
+        agent_avg_latency_ms=round(float(agent_row[4] or 0), 1),
+        agent_total_tokens=int(agent_row[5] or 0),
         eval_dataset_count=int(eval_dataset_count or 0),
         eval_case_count=int(eval_case_count or 0),
         eval_run_count=int(eval_run_count or 0),

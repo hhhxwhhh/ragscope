@@ -22,6 +22,13 @@ class DashboardSummary(BaseModel):
     chunk_count: int
     conversation_count: int
     message_count: int
+    agent_run_count: int
+    agent_completed_count: int
+    agent_success_rate: float
+    agent_avg_steps: float
+    agent_avg_tool_calls: float
+    agent_avg_latency_ms: float
+    agent_total_tokens: int
     eval_dataset_count: int
     eval_case_count: int
     eval_run_count: int
