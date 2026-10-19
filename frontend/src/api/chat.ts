@@ -91,6 +91,8 @@ export interface StreamMeta {
   conversation_id: string
   user_message_id: string
   mode?: ChatMode
+  requested_mode?: ChatMode
+  routing_reason?: string | null
   rewritten_query: string
   rewrite_applied: boolean
   reranked: boolean

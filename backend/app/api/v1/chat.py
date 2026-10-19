@@ -3,7 +3,7 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
@@ -19,6 +19,7 @@ from app.models.user import User
 from app.rag.agent.loop import AgentLoopResult, AgentStepRecord, stream_agent
 from app.rag.answer import stream_answer
 from app.rag.llm import get_chat_model
+from app.rag.router import RouteMode, choose_mode
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services import agent_service, chat_service, kb_service
 
@@ -52,6 +53,18 @@ def _merge_usage(total: dict[str, Any], usage: Any) -> None:
             total[key] = total.get(key, 0) + value
 
 
+def _resolve_mode(requested: str, question: str) -> tuple[RouteMode, str | None]:
+    """Resolve explicit modes and turn auto mode into a concrete path."""
+    if requested != "auto":
+        return cast(RouteMode, requested), None
+    decision = choose_mode(question)
+    if decision.mode == "agent" and not get_settings().agent_enabled:
+        # Auto mode is a convenience, not a hard promise: if the agent is
+        # disabled, answering with single-shot RAG beats failing the request.
+        return "rag", f"{decision.reason}；Agent 未启用，回退到单轮检索"
+    return decision.mode, decision.reason
+
+
 @router.post("/kbs/{kb_id}/chat", response_model=ChatResponse)
 async def chat(
     kb_id: UUID,
@@ -60,7 +73,8 @@ async def chat(
     current_user: CurrentUser,
 ) -> ChatResponse:
     kb = await kb_service.get_owned_kb(db, kb_id, current_user.id)
-    if payload.mode == "agent":
+    mode, routing_reason = _resolve_mode(payload.mode, payload.question)
+    if mode == "agent":
         if not get_settings().agent_enabled:
             raise ServiceUnavailableError("Agent 模式未启用")
         conversation, bundle = await agent_service.answer_agent_once(
@@ -82,6 +96,8 @@ async def chat(
     return ChatResponse(
         conversation_id=conversation.id,
         message=chat_service.to_message_out(bundle),
+        mode=mode,
+        routing_reason=routing_reason,
     )
 
 
@@ -93,7 +109,9 @@ async def chat_stream(
 ) -> StreamingResponse:
     # Retrieval and the user turn are persisted before streaming starts, so the
     # generator holds no database session while tokens are being produced.
-    if payload.mode == "agent":
+    requested_mode = payload.mode
+    mode, routing_reason = _resolve_mode(requested_mode, payload.question)
+    if mode == "agent":
         if not get_settings().agent_enabled:
             raise ServiceUnavailableError("Agent 模式未启用")
         # Resolve the model before persisting the user turn so a missing key
@@ -106,7 +124,11 @@ async def chat_stream(
             payload.conversation_id,
         )
         return StreamingResponse(
-            _agent_event_stream(turn),
+            _agent_event_stream(
+                turn,
+                requested_mode=requested_mode,
+                routing_reason=routing_reason,
+            ),
             media_type="text/event-stream",
             headers=SSE_HEADERS,
         )
@@ -118,7 +140,12 @@ async def chat_stream(
         payload.conversation_id,
     )
     return StreamingResponse(
-        _event_stream(preparation, payload.question),
+        _event_stream(
+            preparation,
+            payload.question,
+            requested_mode=requested_mode,
+            routing_reason=routing_reason,
+        ),
         media_type="text/event-stream",
         headers=SSE_HEADERS,
     )
@@ -126,6 +153,9 @@ async def chat_stream(
 
 async def _agent_event_stream(
     turn: agent_service.AgentTurn,
+    *,
+    requested_mode: str = "agent",
+    routing_reason: str | None = None,
 ) -> AsyncIterator[str]:
     """Stream a bounded agent run: planning steps, trace, then the grounded answer.
 
@@ -142,6 +172,8 @@ async def _agent_event_stream(
             "conversation_id": str(turn.conversation_id),
             "user_message_id": str(turn.user_message_id),
             "mode": "agent",
+            "requested_mode": requested_mode,
+            "routing_reason": routing_reason,
             "rewritten_query": turn.question,
             "rewrite_applied": False,
             "reranked": False,
@@ -322,6 +354,9 @@ async def _persist_agent(
 async def _event_stream(
     preparation: chat_service.StreamPreparation,
     question: str,
+    *,
+    requested_mode: str = "rag",
+    routing_reason: str | None = None,
 ) -> AsyncIterator[str]:
     started = time.perf_counter()
     outcome = preparation.outcome
@@ -332,6 +367,8 @@ async def _event_stream(
             "conversation_id": str(preparation.conversation_id),
             "user_message_id": str(preparation.user_message_id),
             "mode": "rag",
+            "requested_mode": requested_mode,
+            "routing_reason": routing_reason,
             "rewritten_query": outcome.rewritten_query,
             "rewrite_applied": outcome.trace.get("rewrite_applied", False),
             "reranked": outcome.trace.get("reranked", False),

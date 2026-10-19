@@ -191,7 +191,7 @@ export interface ChatMessage {
   agent: AgentRun | null
 }
 
-export type ChatMode = 'rag' | 'agent'
+export type ChatMode = 'rag' | 'agent' | 'auto'
 
 export interface ChatRequest {
   question: string

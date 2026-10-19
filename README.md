@@ -1,6 +1,6 @@
 # RAGScope
 
-企业知识库问答平台，演示场景是消费电子售后：把产品手册、售后政策和 FAQ 变成一线坐席可检索、可引用、可评测的知识底座；同时能看清每次检索到底发生了什么，并用固定评测集判断改配置是不是真的有用。
+通用文档知识库问答平台（RAG + Agent）：把产品手册、技术文档、制度流程、课程资料或研究报告变成可检索、可引用、可评测的知识库。简单问题走单轮混合检索，比较和多跳问题交给 Agent 多步检索；聊天页的「自动」模式会按问题复杂度在两者之间路由。每次回答都能看清检索到底发生了什么，并用固定评测集判断改配置是不是真的有用。
 
 这是一个面向 Python 后端实习的作品集项目。上传、切块、向量/BM25 混合检索、流式回答是 RAG 的常规链路；真正想讲清楚的是后半部分：**检索可观测性 + 评测工作台**。每次回答都记录改写后的 query、四个检索阶段的候选和耗时；任意一次检索可以固化成评测用例；不同检索配置在同一个数据集上跑，对比 recall@k、MRR、拒答率和延迟。
 
@@ -8,9 +8,17 @@
 
 ## 应用场景
 
-演示租户「星河科技」是一家消费电子公司。客服坐席在聊天页提问「X1 的续航是多久」「蒸桑拿进水还算保修吗」，回答以流式输出并带 `[n]` 引用，点开能看到具体文档、章节和页码；知识库运营展开检索 trace，判断问题出在改写、召回还是重排；质检把点踩回答一键转成评测用例，用固定数据集验证一次配置改动到底有没有效。
+这不是某个垂直行业的固定模板，而是一套通用的文档问答底座：换一组文档，就是新的场景。
 
-三条角色链路共用同一套知识库和索引版本。完整的角色分工、四个演示剧本、指标口径和简历表述见 **[docs/use-case.md](docs/use-case.md)**。
+| 场景 | 语料 | 典型问题 | 主要能力 |
+|---|---|---|---|
+| 产品 / 技术文档 | 手册、API 文档、发布说明 | 参数是什么、两个型号差在哪、版本是否兼容 | 单跳 RAG、型号对比 Agent |
+| 售后 / 客服 | 售后政策、FAQ、故障排查 | 进水还能保修吗、这个故障怎么处理 | 政策 + 参数多跳、引用溯源、拒答 |
+| 制度 / 流程 | 员工手册、报销规范、入职指引 | 差旅怎么报、审批要几级、试用期规定 | 跨文档条件检索、版本追溯 |
+| 学习 / 研究 | 课件、论文、调研报告 | 两种方法有什么区别、这份报告的核心结论 | 比较型问答、多步检索、来源定位 |
+| 个人知识库 | 笔记、剪藏、阅读摘录 | 我之前记过什么、这个观点出自哪里 | 混合检索、引用抽屉、检索 trace |
+
+仓库自带一套「星河科技」消费电子演示语料（产品手册、售后政策、FAQ 和 29 条评测用例），用来跑通截图和指标。它只是其中一个语料样例，不是产品边界。完整的场景矩阵、角色链路、演示剧本、指标口径和简历表述见 **[docs/use-case.md](docs/use-case.md)**。
 
 ## 现在能做什么
 
@@ -21,7 +29,8 @@
 - 多查询扩展：可选用 LLM 生成 2–3 个改写问题一起召回，跨越不同表述提高召回；失败或超时会自动回退到单查询
 - Redis 检索缓存：按知识库、索引版本、完整检索配置、会话上下文和 query 做指纹，命中时跳过向量化、召回与重排；评测运行强制绕过缓存
 - 多轮问答：LangChain `ChatOpenAI` 接 DeepSeek，SSE 流式输出、`[n]` 引用、来源抽屉、可中断、回答带检索 trace
-- Agentic RAG（可选模式）：基于 LangGraph ReAct 图（`create_agent`），单 Agent 在预算内自主调用 `search_knowledge_base` / `read_chunk_neighbors` / `get_document_outline`，把多跳、对比问题拆成多次检索；每一步的工具、参数、观测、耗时都通过 SSE 实时展示并落库，回答仍走原来的编号引用链路
+- 自动路由：`mode=auto` 时由确定性规则判断问题是否包含比较、多实体或多跳信号；有信号交给 Agent，没有则走单轮 RAG。规则不额外调用模型，Agent 未启用时自动回退，实际模式和路由原因随 SSE `meta` 返回
+- Agentic RAG（手动 + 自动）：基于 LangGraph ReAct 图（`create_agent`），单 Agent 在预算内自主调用 `search_knowledge_base` / `read_chunk_neighbors` / `get_document_outline`，把多跳、对比问题拆成多次检索；每一步的工具、参数、观测、耗时都通过 SSE 实时展示并落库，回答仍走原来的编号引用链路
 - 引用质量：每次回答统计引用标记数、有效/无效标记、命中来源数与引用率，写入 `messages.citation_stats`
 - 反馈闭环：对回答点赞 / 点踩并填写原因；点踩可一键转成评测用例（自动带入被引用 chunk 作为标注），拒答回答转成不可答案例
 - 会话管理：按标题搜索、重命名、导出 Markdown
@@ -51,9 +60,19 @@
 
 检索阶段的候选、分数、耗时都会写进 `retrieval_traces`；评测只跑这条链路到重排为止，不调用 LLM。
 
-### Agentic RAG 模式
+### Agentic RAG 与自动路由
 
-聊天页右上角可以打开「Agent 检索」。它用 `langchain.agents.create_agent` 编译一张 LangGraph ReAct 状态图（model → tools 循环），模型在预算内自主决定是否继续检索：
+聊天页右上角有三档：**自动 / 快速 / Agent**。「快速」只跑一次单轮混合检索；「Agent」强制走多步工具循环；「自动」在请求进入时做一次确定性判断：
+
+```text
+问题 -> rag/router.py
+          ├─ 比较 / 多实体 / 多部分 / 多问句信号 -> agent
+          └─ 其他 ---------------------------------> rag
+```
+
+规则只看显式信号（`区别`、`对比`、`分别`、两个型号用「和/与」连接、`导致`、`还要`、多个问号等），不额外调用 LLM。这样最简单的问答不会被路由成本拖慢；拿不准时宁可走 RAG，因为误判成 RAG 只多一次检索，误判成 Agent 会多出若干次模型决策。显式指定 `mode=rag|agent` 时规则不生效；`mode=auto` 且 Agent 未启用时回退到 RAG。实际模式、请求模式和路由原因都会写进 SSE `meta`，前端会显示「自动 → Agent」这样的标签。
+
+Agent 路径用 `langchain.agents.create_agent` 编译一张 LangGraph ReAct 状态图（model → tools 循环），模型在预算内自主决定是否继续检索：
 
 ```text
 问题 -> LangGraph ReAct 图（model 节点决定 tool_calls，tools 节点执行）
@@ -72,7 +91,7 @@
 - **规划与作答分离**：图只决定还要不要检索，不写最终答案；最终答案仍由原来的 grounded Prompt 基于去重后的证据流式生成，所以引用编号、`citation_stats`、检索 trace 与单轮模式完全一致。
 - **可观测而不是可幻觉**：消费 `astream_events` 的 `on_tool_start/on_tool_end`，落库工具名、参数、结构化观测（结果条数、chunk_id、预览、错误）和耗时，不保存模型思维链；前端可以展开每一步。
 - **框架负责编排，状态留在本地**：LangGraph 管循环和工具调度，步骤记录、证据去重、预算和引用仍由项目代码掌握，换框架不会影响存储格式和前端事件协议。
-- **成本可见**：默认关闭，按浏览器记住开关；每次开启会多出若干次 LLM 决策调用，适合对比/多跳问题，简单事实问题单轮 RAG 更便宜。
+- **成本可见**：自动模式只把明确的多跳问题升级到 Agent，也可以手动选「快速」或「Agent」，选择按浏览器记住；每条 meta 事件都会带回实际模式与路由原因，方便观察一次问题到底走了哪条路。
 
 ## 评测结果
 
@@ -119,7 +138,7 @@ rag_learn/
 │   │   ├── rag/             # llm, embedder, vector_store, bm25, fusion,
 │   │   │                    # reranker, query_rewriter, multi_query, prompt,
 │   │   │                    # answer (LCEL), retrieval_cache, pipeline,
-│   │   │                    # agent/ (tools + LangGraph ReAct loop)
+│   │   │                    # router (auto mode), agent/ (tools + ReAct loop)
 │   │   ├── schemas/         # Pydantic 请求/响应
 │   │   ├── services/        # 入库、检索、会话、反馈、评测、看板
 │   │   └── workers/         # 文档入库后台任务
@@ -213,7 +232,7 @@ cd backend
 .venv/Scripts/python.exe -m pytest -q
 ```
 
-- 77 个测试，`tests/unit` 覆盖解析器（Markdown / DOCX / 空白 PDF）、页码映射、切块、RRF、指标计算、JWT、多查询解析、检索缓存 key、引用统计，以及用脚本化 fake model 跑真实 LangGraph 图验证 Agent 工具调用、参数校验、证据去重、步数预算、token 汇总与模型失败时的 fail-open；`tests/integration` 覆盖注册/登录/刷新轮换/登出、登录限流、知识库越权 404、评测数据集校验、后台执行器、运行对比、stale 运行恢复、反馈增删改与转评测用例、会话搜索/重命名/导出，以及未配置 LLM key 时 Agent 接口的 503。
+- 91 个测试，`tests/unit` 覆盖解析器（Markdown / DOCX / 空白 PDF）、页码映射、切块、RRF、指标计算、JWT、多查询解析、检索缓存 key、引用统计、自动路由信号与回退，以及用脚本化 fake model 跑真实 LangGraph 图验证 Agent 工具调用、参数校验、证据去重、步数预算、token 汇总与模型失败时的 fail-open；`tests/integration` 覆盖注册/登录/刷新轮换/登出、登录限流、知识库越权 404、评测数据集校验、后台执行器、运行对比、stale 运行恢复、反馈增删改与转评测用例、会话搜索/重命名/导出，以及未配置 LLM key 时 Agent / auto 接口的 503。
 - 集成测试使用独立数据库 `ragscope_test` 和 Redis DB 1；session 开始时自动建库并跑迁移，每个测试前清空表和 Redis。
 - 评测执行器测试 mock 掉 `retrieve`，CI 只装 `.[dev]`，不需要下载 torch。
 - GitHub Actions 分两个 job：后端 ruff + pytest（PostgreSQL/Redis service），前端 typecheck + build。配置在 [.github/workflows/ci.yml](.github/workflows/ci.yml)。

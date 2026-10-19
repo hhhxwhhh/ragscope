@@ -20,7 +20,7 @@ Nginx (生产) ── /api/ ──> FastAPI (uvicorn)
                                    └── DeepSeek API         (LangChain ChatOpenAI，流式)
 ```
 
-RAG 层分两类组件：LangChain 提供 `ChatOpenAI`、`HuggingFaceEmbeddings`、`Chroma` 适配器和 LCEL 链，LangGraph 提供 ReAct 图；BM25、RRF、重排和 trace 由项目自己实现，因为这些地方需要原始的排名、分数和耗时，不能只拿最终答案。Agent 的编排在 `app/rag/agent/loop.py`，工具的权限边界和观测格式在 `agent/tools.py`。
+RAG 层分两类组件：LangChain 提供 `ChatOpenAI`、`HuggingFaceEmbeddings`、`Chroma` 适配器和 LCEL 链，LangGraph 提供 ReAct 图；BM25、RRF、重排和 trace 由项目自己实现，因为这些地方需要原始的排名、分数和耗时，不能只拿最终答案。Agent 的编排在 `app/rag/agent/loop.py`，工具的权限边界和观测格式在 `agent/tools.py`；`app/rag/router.py` 是自动模式的纯函数路由，不依赖数据库和模型。
 
 后端只有一层进程：API、后台任务、模型推理都在同一个容器里。这是作品集项目的刻意选择，不是没来得及拆。代价和扩展路径写在最后一节。
 
@@ -88,7 +88,13 @@ POST /kbs/{id}/chat/stream
 
 多查询扩展让 LLM 生成 2–3 条不同表述的 query，每条分别走向量和 BM25，最后把所有排名一起做加权 RRF。它是一次额外的 LLM 调用，所以默认关闭、有超时（默认 8 秒），失败时回退到单查询，并在 trace 里记录 `multi_query_error`。
 
-### 3b. Agentic RAG（可选模式）
+### 3a. 问答入口：自动路由
+
+`ChatRequest.mode` 支持 `rag` / `agent` / `auto`。`auto` 在 API 层调用 `rag/router.py` 的纯函数：比较/选择词、两个型号用「和/与」连接、多部分/条件词、多个问号等显式信号会把问题升级到 Agent，其余留在单轮 RAG。规则不调用 LLM，理由是自动判断发生在每次提问前，额外一次模型调用会给最简单的问题也增加延迟和失败点。
+
+偏向性也是设计的一部分：误判成 RAG 只多跑一次检索，误判成 Agent 会多出若干次模型决策和工具调用，所以拿不准时走便宜路径。显式指定模式时规则不生效；`auto` 且 `agent_enabled=false` 时回退到 RAG，并在原因里注明。SSE `meta` 返回实际模式、请求模式和路由原因，前端据此显示「自动 → Agent / 快速 RAG」。
+
+### 3b. Agentic RAG（手动或自动命中）
 
 ```text
 POST /kbs/{id}/chat/stream  { mode: "agent" }
@@ -111,7 +117,7 @@ POST /kbs/{id}/chat/stream  { mode: "agent" }
 
 规划图和最终作答是两段：图只决定"还要不要检索"，不产出用户可见答案。这样最终回答仍然经过原来的编号引用 Prompt，`[n]`、`citation_stats`、引用抽屉和 trace 与单轮模式一致，也能避免让规划模型自由发挥导致引用编号错位。
 
-边界都在服务端：步数预算、单轮决策超时、单工具超时、工具白名单、参数校验、每 KB 的 ownership 过滤。任何一次 LLM 调用或工具失败都不直接抛给用户，而是 fail-open：带着已收集的证据继续作答，把原因写进 `agent_runs.stopped_reason`（`max_steps` / `turn_timeout` / `llm_error`）。`GraphRecursionError` 同样归入 `max_steps`，防止模型反复请求同一个工具把请求拖死。前端右上角开关按浏览器记住，默认关闭。
+边界都在服务端：步数预算、单轮决策超时、单工具超时、工具白名单、参数校验、每 KB 的 ownership 过滤。任何一次 LLM 调用或工具失败都不直接抛给用户，而是 fail-open：带着已收集的证据继续作答，把原因写进 `agent_runs.stopped_reason`（`max_steps` / `turn_timeout` / `llm_error`）。`GraphRecursionError` 同样归入 `max_steps`，防止模型反复请求同一个工具把请求拖死。前端右上角是「自动 / 快速 / Agent」三档，选择按浏览器记住，默认「自动」。
 
 落库的是结构化步骤，而不是思维链：工具名、经过校验的参数、观测摘要、状态、耗时。这既够前端还原"它查了什么、为什么查不到"，又不会把模型的内部推理写进数据库。
 

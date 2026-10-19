@@ -30,6 +30,7 @@ import type {
   AgentRun,
   AgentStep,
   ChatMessage,
+  ChatMode,
   Citation,
   Conversation,
   KnowledgeBase,
@@ -57,9 +58,34 @@ const activeCitationRank = ref<number | null>(null)
 const expandedTraces = reactive(new Set<string>())
 const expandedAgents = reactive(new Set<string>())
 
-// Agent mode is a per-browser preference: it costs extra LLM calls, so it is
-// opt-in and remembered across conversations.
-const agentMode = ref(localStorage.getItem('ragscope.agent-mode') === '1')
+// The answer path is a per-browser preference. "auto" is the default: a cheap
+// server-side router keeps factual questions on single-shot RAG and promotes
+// comparison / multi-hop questions to the agent.
+const CHAT_MODES: { value: ChatMode; label: string; hint: string }[] = [
+  {
+    value: 'auto',
+    label: '自动',
+    hint: '简单问题走单轮 RAG，比较或多跳问题自动交给 Agent',
+  },
+  { value: 'rag', label: '快速', hint: '单轮混合检索，延迟和成本最低' },
+  { value: 'agent', label: 'Agent', hint: '多步检索，适合比较、多跳和跨文档问题' },
+]
+
+function initialChatMode(): ChatMode {
+  const stored = localStorage.getItem('ragscope.chat-mode')
+  if (stored === 'auto' || stored === 'rag' || stored === 'agent') {
+    return stored
+  }
+  // Migrate the old boolean agent switch.
+  return localStorage.getItem('ragscope.agent-mode') === '1' ? 'agent' : 'auto'
+}
+
+const chatMode = ref<ChatMode>(initialChatMode())
+const routedMode = ref<'rag' | 'agent' | null>(null)
+const routingReason = ref('')
+const activeModeHint = computed(
+  () => CHAT_MODES.find((item) => item.value === chatMode.value)?.hint || '',
+)
 
 const conversationQuery = ref('')
 let searchTimer: ReturnType<typeof setTimeout> | undefined
@@ -201,12 +227,6 @@ function toggleAgent(message: ChatMessage): void {
   }
 }
 
-function toggleAgentMode(): void {
-  if (!sending.value) {
-    agentMode.value = !agentMode.value
-  }
-}
-
 function appendAgentStep(message: ChatMessage, step: AgentStep): void {
   const run: AgentRun = message.agent || {
     id: `local-agent-${message.id}`,
@@ -309,10 +329,14 @@ async function send(): Promise<void> {
       {
         question,
         conversation_id: activeConversationId.value || null,
-        mode: agentMode.value ? 'agent' : 'rag',
+        mode: chatMode.value,
       },
       {
         onMeta: (meta) => {
+          if (meta.mode === 'rag' || meta.mode === 'agent') {
+            routedMode.value = meta.mode
+          }
+          routingReason.value = meta.routing_reason || ''
           if (!activeConversationId.value) {
             router.replace(`/kbs/${props.id}/chat/${meta.conversation_id}`)
           }
@@ -386,6 +410,8 @@ function startNewChat(): void {
   }
   messages.value = []
   input.value = ''
+  routedMode.value = null
+  routingReason.value = ''
   router.push(`/kbs/${props.id}/chat`)
 }
 
@@ -570,8 +596,10 @@ watch(
   { immediate: true },
 )
 
-watch(agentMode, (value) => {
-  localStorage.setItem('ragscope.agent-mode', value ? '1' : '0')
+watch(chatMode, (value) => {
+  localStorage.setItem('ragscope.chat-mode', value)
+  routedMode.value = null
+  routingReason.value = ''
 })
 
 onMounted(scrollToBottom)
@@ -642,15 +670,26 @@ onMounted(scrollToBottom)
         </div>
         <div class="chat-head-actions">
           <el-tag v-if="sending" type="warning" size="small">生成中…</el-tag>
-          <label class="mode-toggle" title="Agent 模式会先规划并多次检索，再基于证据回答">
-            <el-switch v-model="agentMode" size="small" :disabled="sending" />
-            <span
-              :class="{ active: agentMode, disabled: sending }"
-              @click="toggleAgentMode"
-            >
-              Agent 检索
-            </span>
-          </label>
+          <el-tag
+            v-if="chatMode === 'auto' && routedMode"
+            size="small"
+            type="info"
+            effect="plain"
+            :title="routingReason"
+          >
+            自动 → {{ routedMode === 'agent' ? 'Agent' : '快速 RAG' }}
+          </el-tag>
+          <el-tooltip :content="activeModeHint" placement="bottom">
+            <el-radio-group v-model="chatMode" size="small" :disabled="sending">
+              <el-radio-button
+                v-for="option in CHAT_MODES"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </el-radio-button>
+            </el-radio-group>
+          </el-tooltip>
           <el-button
             v-if="activeConversationId"
             size="small"
@@ -667,9 +706,11 @@ onMounted(scrollToBottom)
           <div class="welcome-mark">R</div>
           <h3>基于知识库回答，并标注来源</h3>
           <p class="muted">
-            适合售后与内部支持：先查产品手册和售后政策，再给出可追溯的答复。每次回答都会记录改写后的
+            产品手册、技术文档、制度流程、课程资料都可以。回答会标注来源；比较或多跳问题可以交给
+            Agent 多次检索，也可以保持「自动」让系统按问题复杂度选择。每次回答都会记录改写后的
             query、各阶段候选与耗时。
           </p>
+          <div class="samples-label muted">演示知识库示例</div>
           <div class="samples">
             <el-button
               v-for="question in sampleQuestions"
@@ -1094,26 +1135,6 @@ onMounted(scrollToBottom)
   gap: 10px;
 }
 
-.mode-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: #64748b;
-  font-size: 12px;
-  cursor: pointer;
-  user-select: none;
-}
-
-.mode-toggle .active {
-  color: #4338ca;
-  font-weight: 600;
-}
-
-.mode-toggle .disabled {
-  color: #cbd5e1;
-  cursor: not-allowed;
-}
-
 .chat-title {
   font-size: 16px;
   font-weight: 600;
@@ -1154,12 +1175,17 @@ onMounted(scrollToBottom)
   font-size: 18px;
 }
 
+.samples-label {
+  margin-top: 18px;
+  font-size: 12px;
+}
+
 .samples {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   justify-content: center;
-  margin-top: 18px;
+  margin-top: 8px;
 }
 
 .message {

@@ -76,6 +76,23 @@ async def test_agent_stream_returns_503_without_llm_key(
     assert response.status_code == 503
 
 
+async def test_auto_mode_is_accepted(
+    client: AsyncClient, register: Any, no_key: None
+) -> None:
+    _, headers = await register()
+    kb_id = await _create_kb(client, headers)
+
+    response = await client.post(
+        f"/api/v1/kbs/{kb_id}/chat",
+        json={"question": "X1 的续航是多少？", "mode": "auto"},
+        headers=headers,
+    )
+
+    # Auto routes this simple question to single-shot RAG, which still needs
+    # the LLM key for generation.
+    assert response.status_code == 503
+
+
 async def test_unknown_chat_mode_is_rejected(client: AsyncClient, register: Any) -> None:
     _, headers = await register()
     kb_id = await _create_kb(client, headers)

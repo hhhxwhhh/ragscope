@@ -127,9 +127,14 @@ class ChatRequest(BaseModel):
     conversation_id: UUID | None = None
     # "rag" is the single-shot retrieval path; "agent" runs the bounded
     # tool-calling loop and then generates from the collected evidence.
-    mode: Literal["rag", "agent"] = "rag"
+    # "auto" picks between them with a cheap rule-based router, so simple
+    # questions keep the low-latency path and multi-hop questions get tools.
+    mode: Literal["rag", "agent", "auto"] = "rag"
 
 
 class ChatResponse(BaseModel):
     conversation_id: UUID
     message: MessageOut
+    # The path actually used. Useful when the caller asked for "auto".
+    mode: Literal["rag", "agent"] | None = None
+    routing_reason: str | None = None
