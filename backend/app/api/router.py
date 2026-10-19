@@ -12,6 +12,7 @@ from app.api.v1 import (
     kbs,
     prompts,
     retrieval,
+    reviews,
 )
 
 api_router = APIRouter()
@@ -25,4 +26,5 @@ api_router.include_router(feedback.router)
 api_router.include_router(prompts.router)
 api_router.include_router(retrieval.router)
 api_router.include_router(eval.router)
+api_router.include_router(reviews.router)
 api_router.include_router(dashboard.router)

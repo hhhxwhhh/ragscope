@@ -54,6 +54,7 @@ settings = get_settings()
 TABLES = (
     "agent_steps",
     "agent_runs",
+    "answer_reviews",
     "eval_results",
     "eval_runs",
     "eval_cases",

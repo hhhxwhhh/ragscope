@@ -13,11 +13,13 @@ from app.models.evaluation import (
 from app.models.knowledge_base import KnowledgeBase
 from app.models.message import Message, MessageRole, MessageStatus
 from app.models.retrieval_trace import RetrievalTrace
+from app.models.review import AnswerReview, ReviewVerdict
 from app.models.user import User
 
 __all__ = [
     "AgentRun",
     "AgentStep",
+    "AnswerReview",
     "Chunk",
     "Citation",
     "Conversation",
@@ -33,5 +35,6 @@ __all__ = [
     "MessageRole",
     "MessageStatus",
     "RetrievalTrace",
+    "ReviewVerdict",
     "User",
 ]

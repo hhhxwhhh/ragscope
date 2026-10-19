@@ -161,7 +161,28 @@ POST /messages/{id}/feedback/eval-case
 
 assistant 消息落库时会计算 `citation_stats`：解析回答里的 `[n]`，对照实际写入的引用条数，得到有效标记、无效标记、来源数和引用率。Dashboard 的用户满意度与引用有效率都来自这里。反馈不是"点个赞就结束"：点踩可以一键变成回归用例，下一次改检索配置时就能用评测台验证有没有把这个问题修好。
 
-### 6. 启动与健康检查
+### 6. 人工抽检与质量闭环
+
+```text
+GET /kbs/{id}/reviews/queue?status=unreviewed|reviewed|all&verdict=&q=
+  ├─ 只列已完成 / 已取消的 assistant 消息
+  ├─ 用相关子查询取该回答前一条用户消息作为 question
+  ├─ 一次批量加载 citations，避免逐条 N+1
+  └─ 返回引用来源、引用率、Prompt 变体，供抽检人判断
+
+PUT /messages/{id}/review
+  ├─ 一条回答最多一条审核记录，重复提交即更新
+  ├─ verdict ∈ {pass, needs_fix, fail}
+  ├─ pass 不允许带问题标签；非 pass 至少带一个闭集标签
+  └─ 写入 answer_reviews
+
+POST /reviews/{id}/eval-case
+  └─ 复用反馈闭环：引用 chunk -> relevant_refs ->「人工抽检回归集」
+```
+
+抽检和用户反馈是两套信号：反馈来自终端用户，抽检来自项目维护者。分开建模后，一条回答可以既被用户点赞、又在抽检中因为“引用格式正确但内容答偏”被判为 `needs_fix`，不会互相覆盖。问题标签使用闭集（无依据陈述、引用错误、回答不完整、答非所问、拒答不当、格式问题），否则汇总页会出现同义标签，无法统计。Dashboard 的抽检覆盖率和通过率直接聚合 `answer_reviews`；覆盖率的分母是已完成回答数，通过率的分母是已抽检数。
+
+### 7. 启动与健康检查
 
 - `lifespan`：恢复 stale 文档和 stale 评测运行；启动阶段不加载模型。
 - `/api/v1/healthz`：进程存活。
@@ -179,6 +200,7 @@ assistant 消息落库时会计算 `citation_stats`：解析回答里的 `[n]`�
 | `conversations` / `messages` | 消息状态 `completed/cancelled/failed`，含延迟与 token 用量；`citation_stats` |
 | `citations` | 引用排名、分数、片段、页码；chunk 删除后置空 |
 | `message_feedbacks` | 一条消息最多一条反馈；`rating ∈ {-1, 1}` + 原因 + 备注 |
+| `answer_reviews` | 一条回答最多一条人工抽检；`verdict` + 闭集问题标签 JSONB + 备注 |
 | `retrieval_traces` | 改写 query、`sub_queries`、`cache_hit`、四阶段候选、分阶段耗时、配置快照 |
 | `agent_runs` / `agent_steps` | 一条 assistant 消息对应一次 run；`stopped_reason` 记录终止原因；step 存取工具名、参数、结构化观测、状态与耗时，按 `(run_id, step_index)` 唯一 |
 | `eval_datasets` / `eval_cases` | 数据集快照切块参数；用例标注到 chunk 级 |
@@ -254,6 +276,6 @@ embedding 在写事务外完成；SSE 流式期间不持有 session；评测执�
 
 1. **多副本 API**：BackgroundTasks 换成外部队列；Chroma 换成独立服务；SSE 通过负载均衡的 sticky session 或独立网关。
 2. **更大语料**：BM25 全量进内存不现实，换 OpenSearch/Elasticsearch 或按 KB 分片；embedding 批处理与增量索引。
-3. **生成侧评测**：现有拒答 / 引用检查只是确定性代理；下一步是人工抽检队列、忠实度评估和 Prompt A/B 流量分配。仍然不建议直接用 LLM judge 当唯一标准。
+3. **生成侧评测**：现有拒答 / 引用检查只是确定性代理；人工抽检队列已经补上，下一步是忠实度评估和 Prompt A/B 流量分配。仍然不建议直接用 LLM judge 当唯一标准，judge 需要用人工抽检结果校准。
 4. **多租户与权限**：团队、角色、审计日志；所有查询增加 tenant 维度。
 5. **可观测性**：结构化日志 + OpenTelemetry trace，把检索阶段耗时接到 APM。

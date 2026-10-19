@@ -18,6 +18,7 @@ from app.models.evaluation import EvalCase, EvalDataset, EvalRun
 from app.models.feedback import MessageFeedback
 from app.models.knowledge_base import KnowledgeBase
 from app.models.message import Message, MessageRole, MessageStatus
+from app.models.review import AnswerReview
 from app.schemas.dashboard import DashboardSummary, DashboardTrend, RecentRunOut, TrendPoint
 
 
@@ -107,6 +108,32 @@ async def summary(db: AsyncSession, user_id: UUID) -> DashboardSummary:
     feedback_negative = int(feedback_negative or 0)
     feedback_total = feedback_positive + feedback_negative
 
+    answer_count = await db.scalar(
+        select(func.count())
+        .select_from(Message)
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .where(
+            Conversation.user_id == user_id,
+            Message.role == MessageRole.ASSISTANT,
+            Message.status.in_((MessageStatus.COMPLETED, MessageStatus.CANCELLED)),
+        )
+    )
+    review_row = (
+        await db.execute(
+            select(
+                func.count(AnswerReview.id),
+                func.count(AnswerReview.id).filter(AnswerReview.verdict == "pass"),
+            )
+            .select_from(AnswerReview)
+            .join(Message, AnswerReview.message_id == Message.id)
+            .join(Conversation, Message.conversation_id == Conversation.id)
+            .where(Conversation.user_id == user_id)
+        )
+    ).one()
+    reviewed_count = int(review_row[0] or 0)
+    review_pass_count = int(review_row[1] or 0)
+    answer_total = int(answer_count or 0)
+
     citation_rate_expr = Message.citation_stats["citation_rate"].astext.cast(Float)
     invalid_marker_expr = Message.citation_stats["invalid_markers"].astext.cast(Integer)
     avg_citation_rate = await db.scalar(
@@ -178,6 +205,11 @@ async def summary(db: AsyncSession, user_id: UUID) -> DashboardSummary:
         ),
         avg_citation_rate=round(float(avg_citation_rate or 0), 4),
         invalid_citation_markers=int(invalid_citation_markers or 0),
+        reviewed_count=reviewed_count,
+        review_coverage=round(reviewed_count / answer_total, 4) if answer_total else 0.0,
+        review_pass_rate=(
+            round(review_pass_count / reviewed_count, 4) if reviewed_count else 0.0
+        ),
         recent_runs=recent_runs,
     )
 

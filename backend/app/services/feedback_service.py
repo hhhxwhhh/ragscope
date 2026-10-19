@@ -71,25 +71,32 @@ async def delete_feedback(db: AsyncSession, message_id: UUID) -> None:
         await db.delete(feedback)
 
 
-async def _ensure_feedback_dataset(db: AsyncSession, kb: KnowledgeBase) -> EvalDataset:
+async def _ensure_dataset(
+    db: AsyncSession,
+    kb: KnowledgeBase,
+    name: str,
+    description: str,
+) -> EvalDataset:
     dataset = await db.scalar(
         select(EvalDataset).where(
             EvalDataset.kb_id == kb.id,
-            EvalDataset.name == FEEDBACK_DATASET_NAME,
+            EvalDataset.name == name,
         )
     )
     if dataset is not None:
         if (dataset.chunk_size, dataset.chunk_overlap) != (kb.chunk_size, kb.chunk_overlap):
-            raise ConflictError("知识库切块参数已变更，反馈回归集已失效；请新建数据集")
+            raise ConflictError("知识库切块参数已变更，回归集已失效；请新建数据集")
         return dataset
-    return await eval_service.create_dataset(
-        db, kb, FEEDBACK_DATASET_NAME, FEEDBACK_DATASET_DESCRIPTION
-    )
+    return await eval_service.create_dataset(db, kb, name, description)
 
 
 async def convert_to_eval_case(
     db: AsyncSession,
     message: Message,
+    *,
+    dataset_name: str = FEEDBACK_DATASET_NAME,
+    dataset_description: str = FEEDBACK_DATASET_DESCRIPTION,
+    notes: str | None = None,
 ) -> tuple[EvalDataset, EvalCase, bool]:
     """Create (or reuse) a labelled case from an assistant answer.
 
@@ -110,7 +117,7 @@ async def convert_to_eval_case(
     if kb is None:
         raise BadRequestError("知识库不存在")
 
-    dataset = await _ensure_feedback_dataset(db, kb)
+    dataset = await _ensure_dataset(db, kb, dataset_name, dataset_description)
     existing = await db.scalar(
         select(EvalCase).where(
             EvalCase.dataset_id == dataset.id,
@@ -139,13 +146,15 @@ async def convert_to_eval_case(
         if citation.document_id is not None
     ]
     answerable = bool(refs)
-    notes = "来自用户反馈的差评" if answerable else "来自用户反馈：原回答未给出可引用来源"
+    default_notes = (
+        "来自用户反馈的差评" if answerable else "来自用户反馈：原回答未给出可引用来源"
+    )
 
     payload = EvalCaseCreate(
         question=question_message.content,
         relevant_refs=refs,
         answerable=answerable,
-        notes=notes[:1000],
+        notes=(notes or default_notes)[:1000],
     )
     case = await eval_service.create_case(db, dataset, payload)
     logger.info("feedback case created dataset=%s message=%s", dataset.id, message.id)

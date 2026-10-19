@@ -10,6 +10,7 @@ import { Refresh, UploadFilled } from '@element-plus/icons-vue'
 
 import EvalPanel from '@/components/EvalPanel.vue'
 import RetrievalDebugPanel from '@/components/RetrievalDebugPanel.vue'
+import ReviewQueuePanel from '@/components/ReviewQueuePanel.vue'
 import { getKb } from '@/api/kb'
 import {
   deleteDocument,
@@ -24,7 +25,7 @@ const props = defineProps<{ id: string }>()
 const route = useRoute()
 const router = useRouter()
 
-const TABS = ['documents', 'debug', 'eval']
+const TABS = ['documents', 'debug', 'eval', 'reviews']
 
 function tabFromQuery(): string {
   const tab = route.query.tab
@@ -322,6 +323,10 @@ onUnmounted(stopPolling)
 
         <el-tab-pane label="评测" name="eval" lazy>
           <EvalPanel :kb-id="id" />
+        </el-tab-pane>
+
+        <el-tab-pane label="人工抽检" name="reviews" lazy>
+          <ReviewQueuePanel :kb-id="id" />
         </el-tab-pane>
       </el-tabs>
     </el-card>

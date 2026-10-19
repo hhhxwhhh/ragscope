@@ -121,6 +121,57 @@ export interface FeedbackCaseResult {
   created: boolean
 }
 
+export type ReviewVerdict = 'pass' | 'needs_fix' | 'fail'
+
+export type ReviewIssueTag =
+  | 'unsupported_claim'
+  | 'wrong_citation'
+  | 'incomplete'
+  | 'off_topic'
+  | 'refusal_error'
+  | 'formatting'
+
+export interface AnswerReview {
+  id: string
+  message_id: string
+  reviewer_id: string
+  verdict: ReviewVerdict
+  issue_tags: ReviewIssueTag[]
+  note: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ReviewQueueItem {
+  message_id: string
+  conversation_id: string
+  conversation_title: string
+  question: string
+  answer: string
+  message_status: string
+  prompt_variant: string | null
+  latency_ms: number | null
+  citation_stats: CitationStats | null
+  citations: Citation[]
+  review: AnswerReview | null
+  created_at: string
+}
+
+export type ReviewQueuePage = Page<ReviewQueueItem>
+
+export interface ReviewSummary {
+  total_answers: number
+  reviewed: number
+  unreviewed: number
+  coverage: number
+  pass_count: number
+  needs_fix_count: number
+  fail_count: number
+  pass_rate: number
+  verdict_counts: Record<ReviewVerdict, number>
+  issue_counts: Record<ReviewIssueTag, number>
+}
+
 export interface TraceCandidate {
   chunk_id: string
   document_id: string
@@ -415,6 +466,9 @@ export interface DashboardSummary {
   feedback_positive_rate: number
   avg_citation_rate: number
   invalid_citation_markers: number
+  reviewed_count: number
+  review_coverage: number
+  review_pass_rate: number
   recent_runs: RecentRun[]
 }
 

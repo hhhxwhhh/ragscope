@@ -33,6 +33,7 @@
 - Agentic RAG（手动 + 自动）：基于 LangGraph ReAct 图（`create_agent`），单 Agent 在预算内自主调用 `search_knowledge_base` / `read_chunk_neighbors` / `get_document_outline`，把多跳、对比问题拆成多次检索；每一步的工具、参数、观测、耗时都通过 SSE 实时展示并落库，回答仍走原来的编号引用链路
 - 引用质量：每次回答统计引用标记数、有效/无效标记、命中来源数与引用率，写入 `messages.citation_stats`
 - 反馈闭环：对回答点赞 / 点踩并填写原因；点踩可一键转成评测用例（自动带入被引用 chunk 作为标注），拒答回答转成不可答案例
+- 人工抽检队列：按知识库列出待抽检 / 已抽检回答，抽检时看到完整回答、引用来源和引用率；结论为通过 / 需修改 / 不通过，不通过必须选择闭集问题标签。抽检不通过可一键转入「人工抽检回归集」，形成质量闭环
 - 会话管理：按标题搜索、重命名、导出 Markdown
 - 运维接口：`/healthz` 存活检查，`/readyz` 同时检查 PostgreSQL / Redis / Chroma；请求带 `X-Request-ID` 和耗时头
 - 检索调试台：向量 / BM25 / RRF / 重排四组候选，分阶段耗时瀑布，单次请求覆盖检索参数，显示多查询扩展与缓存命中情况，一键保存为评测用例
@@ -40,7 +41,7 @@
 - Prompt Lab（v1）：`grounded` / `strict_citation` / `structured` 三个版本化 Prompt 写在代码里，聊天页可切换；每条 assistant 消息和每次生成评测都记录实际使用的变体。Prompt 不做数据库热编辑，保证任何一次回答都能被 git 历史复现
 - 生成评测（可选）：在检索评测之后逐条调用 LLM，用确定性规则统计生成拒答准确率、误拒答率、引用合规率、生成耗时与 token；不引入 LLM-as-judge，生成失败不污染已有的检索指标
 - 路由评测：用例可标注期望路径（`rag` / `agent`），按确定性路由器的实际输出计算准确率、Agent 类别的 precision / recall / F1 和混淆矩阵；未标注用例只展示预测，不污染指标
-- Dashboard：知识库 / 文档 / chunk / 会话 / 评测 KPI，Agent 运行成功率、平均步数 / 工具调用 / 耗时 / token，用户满意度、引用有效率，14 天活动趋势，最近评测结果
+- Dashboard：知识库 / 文档 / chunk / 会话 / 评测 KPI，Agent 运行成功率、平均步数 / 工具调用 / 耗时 / token，用户满意度、引用有效率、人工抽检覆盖率与通过率，14 天活动趋势，最近评测结果
 
 ## 一次检索的链路
 
@@ -178,7 +179,7 @@ rag_learn/
 │   │   │                    # answer (LCEL), retrieval_cache, pipeline,
 │   │   │                    # router (auto mode), agent/ (tools + ReAct loop)
 │   │   ├── schemas/         # Pydantic 请求/响应
-│   │   ├── services/        # 入库、检索、会话、反馈、评测、看板
+│   │   ├── services/        # 入库、检索、会话、反馈、抽检、评测、看板
 │   │   └── workers/         # 文档入库后台任务
 │   ├── alembic/versions/
 │   ├── scripts/
@@ -190,7 +191,7 @@ rag_learn/
 │   └── Dockerfile
 ├── frontend/src/
 │   ├── api/                 # axios 封装与 SSE
-│   ├── components/          # RetrievalDebugPanel, EvalPanel
+│   ├── components/          # RetrievalDebugPanel, EvalPanel, ReviewQueuePanel
 │   ├── views/               # Dashboard, KbDetail, Chat, EvalRun, EvalCompare
 │   └── types/
 ├── data/                    # 5 篇虚构的星河科技产品文档
@@ -286,7 +287,7 @@ cd backend
 .venv/Scripts/python.exe -m pytest -q
 ```
 
-- 113 个测试，`tests/unit` 覆盖解析器（Markdown / DOCX / 空白 PDF）、页码映射、切块、RRF、指标计算、路由报告（准确率 / precision / recall / F1 / 混淆矩阵 / 未标注处理）、Prompt 注册表（默认变体、未知变体、固定拒答句、构建缓存）、生成指标聚合与拒答识别、JWT、多查询解析、检索缓存 key、引用统计、自动路由信号与回退，以及用脚本化 fake model 跑真实 LangGraph 图验证 Agent 工具调用、参数校验、证据去重、步数预算、token 汇总与模型失败时的 fail-open；`tests/integration` 覆盖注册/登录/刷新轮换/登出、登录限流、知识库越权 404、评测数据集校验、期望路径的 PATCH 语义与路由报告、Prompt 列表接口、生成评测的答案落库 / prompt 归因 / 无 key 拒绝、后台执行器、运行对比、stale 运行恢复、反馈增删改与转评测用例、会话搜索/重命名/导出，以及未配置 LLM key 时 Agent / auto 接口的 503。
+- 120 个测试，`tests/unit` 覆盖解析器（Markdown / DOCX / 空白 PDF）、页码映射、切块、RRF、指标计算、路由报告（准确率 / precision / recall / F1 / 混淆矩阵 / 未标注处理）、Prompt 注册表（默认变体、未知变体、固定拒答句、构建缓存）、生成指标聚合与拒答识别、JWT、多查询解析、检索缓存 key、引用统计、自动路由信号与回退，以及用脚本化 fake model 跑真实 LangGraph 图验证 Agent 工具调用、参数校验、证据去重、步数预算、token 汇总与模型失败时的 fail-open；`tests/integration` 覆盖注册/登录/刷新轮换/登出、登录限流、知识库越权 404、评测数据集校验、期望路径的 PATCH 语义与路由报告、Prompt 列表接口、生成评测的答案落库 / prompt 归因 / 无 key 拒绝、后台执行器、运行对比、stale 运行恢复、反馈增删改与转评测用例、人工抽检队列的筛选 / 校验 / 越权 404 / 转回归用例、会话搜索/重命名/导出，以及未配置 LLM key 时 Agent / auto 接口的 503。
 - 集成测试使用独立数据库 `ragscope_test` 和 Redis DB 1；session 开始时自动建库并跑迁移，每个测试前清空表和 Redis。
 - 评测执行器测试 mock 掉 `retrieve`，CI 只装 `.[dev]`，不需要下载 torch。
 - GitHub Actions 分两个 job：后端 ruff + pytest（PostgreSQL/Redis service），前端 typecheck + build。配置在 [.github/workflows/ci.yml](.github/workflows/ci.yml)。
@@ -322,8 +323,8 @@ cd backend
 
 ## 接下来
 
-- 优先扩大「用户反馈回归集」并补人工抽检界面，把线上点踩持续转成回归用例，而不是继续堆检索组件
-- 用生成评测对 Prompt 变体做 A/B：同一数据集、同一索引版本，只看拒答 / 引用 / 延迟的取舍；样本足够后再考虑接入 LLM-as-judge 做忠实度评估
+- 扩大「用户反馈回归集」和「人工抽检回归集」，把线上点踩、抽检失败持续转成回归用例，而不是继续堆检索组件
+- 用生成评测对 Prompt 变体做 A/B：同一数据集、同一索引版本，只看拒答 / 引用 / 延迟的取舍；样本足够后再考虑接入 LLM-as-judge 做忠实度评估，并用人工抽检结果校准 judge
 - 多副本部署时把 BackgroundTasks 迁到 Celery/RQ，Chroma 换成独立向量服务
 - 登录限流升级为滑动窗口/令牌桶，并增加审计日志
 - 增加 Playwright 冒烟测试和前端组件测试

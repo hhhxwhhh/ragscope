@@ -6,6 +6,7 @@ import { LineChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import {
+  Checked,
   Collection,
   Connection,
   Cpu,
@@ -98,6 +99,13 @@ const kpis = computed(() => {
       hint: `${data?.invalid_citation_markers ?? 0} 个无效引用标记`,
       icon: Link,
       color: '#7c3aed',
+    },
+    {
+      label: '人工抽检',
+      value: formatPct(data?.review_coverage ?? null),
+      hint: `${data?.reviewed_count ?? 0} 条已抽检 · 通过率 ${formatPct(data?.review_pass_rate ?? null)}`,
+      icon: Checked,
+      color: '#16a34a',
     },
   ]
 })

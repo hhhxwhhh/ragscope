@@ -38,6 +38,9 @@ class DashboardSummary(BaseModel):
     feedback_positive_rate: float
     avg_citation_rate: float
     invalid_citation_markers: int
+    reviewed_count: int
+    review_coverage: float
+    review_pass_rate: float
     recent_runs: list[RecentRunOut]
 
 
