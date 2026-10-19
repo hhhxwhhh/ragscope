@@ -44,6 +44,12 @@ dependencies = [
 rag = [
     "sentence-transformers>=3.0",
 ]
+# Offline helper for scanned PDFs: render pages and OCR them into a .txt that
+# the normal parser can ingest. Not used by the API runtime.
+ocr = [
+    "pymupdf>=1.24",
+    "rapidocr-onnxruntime>=1.4",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",

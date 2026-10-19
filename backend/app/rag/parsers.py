@@ -7,6 +7,8 @@ starts on without changing the chunker's text coordinates.
 PDF extraction is text-only: scanned pages without an embedded text layer come
 out empty (OCR is deliberately out of scope). DOCX headings are converted to
 Markdown ``#`` markers so the existing structure-aware chunker can reuse them.
+Plain-text files may carry ``【第 N 页】`` markers (the output of
+``scripts/ocr_pdf.py``); those markers become page offsets for citations.
 """
 
 import re
@@ -17,6 +19,9 @@ SUPPORTED_EXTENSIONS = {".md", ".txt", ".pdf", ".docx"}
 PAGE_SEPARATOR = "\n\n"
 
 _HEADING_STYLE_RE = re.compile(r"^(?:heading|标题)\s*(\d+)$", re.IGNORECASE)
+# Offline OCR writes one marker line per page; treat those as page boundaries so
+# chunks from the generated .txt still expose a page number in citations.
+_PAGE_MARKER_RE = re.compile(r"^【第\s*(\d+)\s*页】\s*$", re.MULTILINE)
 
 
 class ParserError(ValueError):
@@ -42,7 +47,13 @@ def _read_text(path: Path) -> str:
 
 
 def _parse_text_file(path: Path) -> ParsedDocument:
-    return ParsedDocument(text=_read_text(path))
+    text = _read_text(path)
+    starts = [
+        (match.start(), int(match.group(1)))
+        for match in _PAGE_MARKER_RE.finditer(text)
+    ]
+    page_count = max((page for _, page in starts), default=None)
+    return ParsedDocument(text=text, page_starts=starts, page_count=page_count)
 
 
 def _parse_pdf(path: Path) -> ParsedDocument:

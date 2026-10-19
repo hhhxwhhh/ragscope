@@ -187,6 +187,7 @@ def _merge_bm25_hit(
             "filename": chunk.filename,
             "chunk_index": chunk.chunk_index,
             "heading_path": chunk.heading_path,
+            "page_number": chunk.page_number,
             "content": chunk.content,
             "bm25_score": round(hit.score, 6),
             "bm25_rank": rank,

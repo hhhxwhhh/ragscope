@@ -24,6 +24,10 @@ backend/data/
 .ruff_cache/
 .hypothesis/
 
+# 个人书籍等大文件与 OCR 中间产物，不入库
+data/*.pdf
+data/*_ocr*.txt
+
 # ===== 模型 / 向量库等大文件（按需保留）=====
 # models/
 # chroma_db/

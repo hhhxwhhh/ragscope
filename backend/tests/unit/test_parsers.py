@@ -38,6 +38,29 @@ def test_docx_preserves_headings_and_tables(tmp_path: Path) -> None:
     assert parsed.page_starts == []
 
 
+def test_txt_page_markers_become_page_offsets(tmp_path: Path) -> None:
+    text = "【第 1 页】\n第一页的正文内容。\n\n【第 7 页】\n第七页的正文内容。\n"
+    path = tmp_path / "book_ocr.txt"
+    path.write_text(text, encoding="utf-8")
+
+    parsed = parse_document(path)
+
+    assert [page for _, page in parsed.page_starts] == [1, 7]
+    assert parsed.page_starts[0][0] == 0
+    assert parsed.page_starts[1][0] == parsed.text.index("【第 7 页】")
+    assert parsed.page_count == 7
+
+
+def test_txt_without_page_markers_has_no_page_map(tmp_path: Path) -> None:
+    path = tmp_path / "notes.txt"
+    path.write_text("普通文本没有页码标记。", encoding="utf-8")
+
+    parsed = parse_document(path)
+
+    assert parsed.page_starts == []
+    assert parsed.page_count is None
+
+
 def test_pdf_without_text_layer_is_rejected(tmp_path: Path) -> None:
     path = tmp_path / "scanned.pdf"
     writer = PdfWriter()

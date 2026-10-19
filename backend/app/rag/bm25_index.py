@@ -73,6 +73,7 @@ class Bm25Document:
     chunk_index: int
     filename: str
     heading_path: str | None
+    page_number: int | None
     content: str
 
 
@@ -154,6 +155,7 @@ def _to_langchain_document(document: Bm25Document) -> Document:
             "chunk_index": document.chunk_index,
             "filename": document.filename,
             "heading_path": document.heading_path,
+            "page_number": document.page_number,
         },
     )
 
@@ -177,6 +179,7 @@ async def _load_index(
                 Chunk.document_id,
                 Chunk.chunk_index,
                 Chunk.heading_path,
+                Chunk.page_number,
                 Chunk.content,
                 DocumentModel.filename,
             )
@@ -193,6 +196,7 @@ async def _load_index(
             chunk_index=row.chunk_index,
             filename=row.filename,
             heading_path=row.heading_path,
+            page_number=row.page_number,
             content=row.content,
         )
         for row in rows

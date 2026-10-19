@@ -184,6 +184,7 @@ rag_learn/
 │   ├── scripts/
 │   │   ├── seed_demo.py     # 一键创建演示账号、知识库、文档和 29 条用例
 │   │   ├── seed_eval.py     # 只重建评测数据集
+│   │   ├── ocr_pdf.py       # 扫描件 PDF -> 文本（离线预处理）
 │   │   └── reindex_vectors.py
 │   ├── tests/{unit,integration}/
 │   └── Dockerfile
@@ -240,6 +241,19 @@ PYTHONIOENCODING=utf-8 PYTHONPATH=. .venv/Scripts/python.exe scripts/seed_demo.p
 ```
 
 脚本是幂等的：创建演示账号 `demo@ragscope.dev` / `Passw0rd!123`、知识库「星河科技产品库」、5 篇文档，并重建「演示评测集 v1」。已入库的文档会跳过，没有入库成功的会重新上传。之后在页面里发起评测运行即可。
+
+### 扫描版 PDF
+
+运行时解析器只接受带文字层的 PDF；扫描件会明确报错，而不是索引一堆空文本。扫描件可以先用离线脚本转成 `.txt`，再走正常上传：
+
+```bash
+cd backend
+pip install -e ".[ocr]"
+PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe scripts/ocr_pdf.py \
+  ../data/book.pdf ../data/book_ocr.txt --dpi 180
+```
+
+`ocr_pdf.py` 用 PyMuPDF 逐页渲染、RapidOCR 本地识别，输出里保留 `【第 N 页】` 标记，后续可以按页引用。342 页的书在 CPU 上大约 2–3 秒/页。OCR 是预处理步骤，不进入 API 运行链路，也不需要 GPU；`.pdf` 和 OCR 中间产物已在 `.gitignore` 中忽略。
 
 ### Docker 一键启动
 
