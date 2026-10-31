@@ -165,3 +165,42 @@ def test_extract_keeps_list_items_on_one_line_and_strips_zero_width():
     assert "- 第一项" in page.markdown
     assert "- 第二项" in page.markdown
     assert "\u200b" not in page.markdown
+
+
+def test_extract_drops_chrome_before_the_first_heading():
+    """A promo banner with no noise class still lands before the H1.
+
+    Vite's docs open every page with a conference banner whose only markup hint
+    is ``class="viteconf"``; the noise-attribute heuristic cannot see it, so the
+    rule has to be positional: docs bodies start at the H1.
+    """
+    html = (
+        "<body>"
+        '<a class="viteconf" href="https://viteconf.org/">'
+        '<p class="extra-info">Building Together</p>'
+        '<p class="heading">ViteConf 2026</p>'
+        '<p class="extra-info">October 15, Online</p>'
+        "</a>"
+        "<main><h1>构建选项</h1><p>本节中的选项仅适用于构建。</p></main>"
+        "</body>"
+    )
+    page = extract(html, "https://e.com/x")
+    assert "Building Together" not in page.markdown
+    assert "ViteConf" not in page.markdown
+    assert page.markdown.startswith("# 构建选项")
+
+
+def test_extract_keeps_an_intro_that_has_no_heading():
+    """No heading means no anchor; the rule must not delete the whole page."""
+    html = "<body><p>这一段就是正文，页面没有标题。</p><p>第二段。</p></body>"
+    page = extract(html, "https://e.com/x")
+    assert "这一段就是正文" in page.markdown
+    assert "第二段" in page.markdown
+
+
+def test_extract_keeps_a_long_lead_in_paragraph():
+    """A heading deep into the page is not an H1; the text above it is the intro."""
+    lead = "这是一段很长的引言。" * 40
+    html = f"<body><p>{lead}</p><h2>小标题</h2><p>后续内容。</p></body>"
+    page = extract(html, "https://e.com/x")
+    assert "这是一段很长的引言。" in page.markdown

@@ -1,0 +1,468 @@
+> 来源：https://cn.vite.dev/config/build-options
+
+# 构建选项
+
+除非另有说明，本节中的选项仅适用于构建。
+
+## build.target
+
+- 类型： `string | string[]`
+- 默认值： `'baseline-widely-available'`
+- 相关内容： 浏览器兼容性
+
+最终软件包的浏览器兼容性目标。默认值是 Vite 的一个特殊值 `'baseline-widely-available'`，该值以每个主要版本所固定日期时与 Baseline Widely Available 兼容的最低浏览器版本为目标（此主要版本的日期为 2026-01-01）。具体来说，它是 `['chrome111', 'edge111', 'firefox114', 'safari16.4', 'ios16.4']`。
+
+另一个特殊值是 `'esnext'` —— 即假设有原生动态导入支持，并只执行最低限度的转译。
+
+转换过程将会由 Oxc Transformer 执行，并且此值应该是一个合法的 Oxc Transformer 目标选项。自定义目标也可以是一个 ES 版本（例如：`es2015`）、一个浏览器版本（例如：`chrome58`）或是多个目标组成的一个数组。
+
+注意：如果代码包含不能被 `Oxc` 安全地编译的特性，那么构建将会输出警告。查看 Oxc 文档 获取更多细节。
+
+## build.modulePreload
+
+- 类型： `boolean | { polyfill?: boolean, resolveDependencies?: ResolveModulePreloadDependenciesFn }`
+- 默认值： `{ polyfill: true }`
+
+默认情况下，一个 模块预加载 polyfill 会被自动注入。该 polyfill 会自动注入到每个 `index.html` 入口的代理模块中。如果构建通过 `build.rolldownOptions.input` 被配置为了使用非 HTML 入口的形式，那么必须要在你的自定义入口中手动引入该 polyfill：
+
+js
+
+```
+import 'vite/modulepreload-polyfill'
+```
+注意：此 polyfill 不适用于 Library 模式。如果你需要支持不支持动态引入的浏览器，你应该避免在你的库中使用此选项。
+
+此 polyfill 可以通过 `{ polyfill: false }` 来禁用。
+
+每个动态导入要预加载的块列表将由 Vite 计算。默认情况下，在载入这些依赖时，会使用一个包含 `base` 的绝对路径。如果 `base` 是相对路径（`''` 或者 `'./'`），解析时则会使用 `import.meta.url`，以避免出现依赖于最终部署基路径的绝对路径。
+
+目前有一个实验性功能支持使用 `resolveDependencies` 函数对依赖项列表及其路径进行细粒度控制。可以在这里 提供反馈。它期望接收一个 `ResolveModulePreloadDependenciesFn` 类型的函数：
+
+ts
+
+```
+type ResolveModulePreloadDependenciesFn = (
+  url: string,
+  deps: string[],
+  context: {
+    hostId: string
+    hostType: 'html' | 'js'
+  },
+) => string[]
+```
+`resolveDependencies` 函数会在每次动态导入时被调用，并包含其依赖的 chunk 列表。同时，它也会在入口 HTML 文件中导入每个 chunk 时被调用。你可以返回一个新的依赖数组，其中可以过滤掉或注入更多的依赖，或修改它们的路径。`deps` 路径是相对于 `build.outDir` 的。返回值应是对于 `build.outDir` 的相对路径。
+
+js
+
+```
+modulePreload
+
+: {
+
+resolveDependencies
+
+: (
+
+filename
+
+,
+
+deps
+
+, {
+
+hostId
+
+,
+
+hostType
+
+ }) => {
+    return
+
+deps
+
+.
+
+filter
+
+(condition)
+  },
+},
+```
+解析得到的依赖路径可以再在之后使用 `experimental.renderBuiltUrl` 更改。
+
+## build.polyfillModulePreload
+
+- 类型： `boolean`
+- 默认值： `true`
+- 已废弃 请使用 `build.modulePreload.polyfill` 替代
+
+是否自动注入一个 模块预加载 polyfill。
+
+## build.outDir
+
+- 类型： `string`
+- 默认值： `dist`
+
+指定输出路径（相对于 项目根目录)。
+
+## build.assetsDir
+
+- 类型： `string`
+- 默认值： `assets`
+
+指定生成静态资源的存放路径（相对于 `build.outDir`）。在 库模式 下不能使用。
+
+## build.assetsInlineLimit
+
+- 类型： `number` | `((filePath: string, content: Buffer) => boolean | undefined)`
+- 默认值： `4096` (4 KiB)
+
+小于此阈值的导入或引用资源将内联为 base64 编码，以避免额外的 http 请求。设置为 `0` 可以完全禁用此项。
+
+如果传入了一个回调函数，可以通过返回一个布尔值来选择是否加入。如果没有返回任何内容，那么就会应用默认的逻辑。
+
+Git LFS 占位符会自动排除在内联之外，因为它们不包含其所表示的文件的内容。
+
+注意
+
+如果你指定了 `build.lib`，那么 `build.assetsInlineLimit` 将被忽略，无论文件大小或是否为 Git LFS 占位符，资源都会被内联。
+
+## build.cssCodeSplit
+
+- 类型： `boolean`
+- 默认值： `true`
+
+启用/禁用 CSS 代码拆分。当启用时，在异步 chunk 中导入的 CSS 将内联到异步 chunk 本身，并在其被加载时一并获取。
+
+如果禁用，整个项目中的所有 CSS 将被提取到一个 CSS 文件中。
+
+注意
+
+如果指定了 `build.lib`，`build.cssCodeSplit` 会默认为 `false`。
+
+## build.cssTarget
+
+- 类型： `string | string[]`
+- 默认值： 与 `build.target` 一致
+
+此选项允许用户为 CSS 的压缩设置一个不同的浏览器 target，此处的 target 并非是用于 JavaScript 转写目标。
+
+当 `build.cssMinify` 为 `'lightningcss'`（默认值）时，在最小化压缩阶段，此选项的优先级高于 `css.lightningcss.targets`。
+
+应只在针对非主流浏览器时使用。最直观的示例是当你要兼容的场景是安卓微信中的 webview 时，它支持大多数现代的 JavaScript 功能，但并不支持 CSS 中的 `#RGBA` 十六进制颜色符号。 这种情况下，你需要将 `build.cssTarget` 设置为 `chrome61`，以防止 Vite 将 `rgba()` 颜色转化为 `#RGBA` 十六进制符号的形式。
+
+## build.cssMinify
+
+- 类型： `boolean | 'lightningcss' | 'esbuild'`
+- 默认值： `'lightningcss'`，但如果客户端构建时禁用了 `build.minify`，则为 `false`
+
+此选项允许用户覆盖 CSS 最小化压缩的配置，而不是使用默认的 `build.minify`，这样你就可以单独配置 JS 和 CSS 的最小压缩方式。Vite 默认使用 Lightning CSS 来压缩 CSS。可以通过 `css.lightningcss` 进行配置。将此选项设置为 `'esbuild'` 可以改用 esbuild 进行压缩。
+
+当设置为 `'esbuild'` 时，必须安装 esbuild。
+
+sh
+
+```
+npm add -D esbuild
+```
+## build.sourcemap
+
+- 类型： `boolean | 'inline' | 'hidden'`
+- 默认值： `false`
+
+构建后是否生成 source map 文件。如果为 `true`，将会创建一个独立的 source map 文件。如果为 `'inline'`，source map 将作为一个 data URI 附加在输出文件中。`'hidden'` 的工作原理与 `true` 相似，只是 bundle 文件中相应的注释将不被保留。
+
+## build.chunkImportMap
+
+- 类型： `boolean`
+- 默认值： `false`
+- 实验性
+- 相关内容： 代码块导入映射优化
+
+是否使用导入映射功能优化代码块的缓存效率。
+
+请注意，此选项要求浏览器 支持 `import.meta.resolve`。如需支持较旧的浏览器，请参阅 `@vitejs/plugin-legacy`。
+
+## build.rolldownOptions
+
+- 类型： `RolldownOptions`
+
+直接自定义底层 Rolldown 包。这与从 Rolldown 配置文件导出的选项相同，并将与 Vite 的内部 Rolldown 选项合并。更多详情请参阅 Rolldown 选项文档。
+
+Vite 会覆盖 Rolldown 中 `preserveEntrySignatures` 的默认值。当此选项未设置时，Vite 对普通客户端构建使用 `false`，对库构建使用 `'strict'`，对 SSR 构建使用 `'allow-extension'`。
+
+建议设置顶层 `input` 选项，而不是 `build.rolldownOptions.input`，因为顶层选项也会在开发期间使用。如果设置了 `build.rolldownOptions.input`，它将只在构建期间覆盖顶层 `input` 选项。
+
+## build.rollupOptions
+
+- 类型： `RolldownOptions`
+- 已弃用
+
+此选项是 `build.rolldownOptions` 选项的别名。请使用 `build.rolldownOptions` 选项代替。
+
+## build.dynamicImportVarsOptions
+
+- 类型： `{ include?: string | RegExp | (string | RegExp)[], exclude?: string | RegExp | (string | RegExp)[] }`
+- 相关内容： 动态导入
+
+是否转换带有变量的动态导入。
+
+## build.lib
+
+- 类型： `{ entry?: string | string[] | { [entryAlias: string]: string }, name?: string, formats?: ('es' | 'cjs' | 'umd' | 'iife')[], fileName?: string | ((format: ModuleFormat, entryName: string) => string), cssFileName?: string }`
+- 相关内容： 库模式
+
+以库的形式构建。`entry` 默认为顶层 `input` 选项的值。由于库不能使用 HTML 作为入口，因此必须设置其中一个选项。`name` 是暴露的全局变量，当 `formats` 包括 `'umd'` 或 `'iife'` 时必须设置。默认的 `formats` 为 `['es', 'umd']`；如果使用多个入口，则为 `['es', 'cjs']`。
+
+`fileName` 是软件包输出文件的名称，默认为 `package.json` 中的 `"name"`。它也可以定义为以 `format` 和 `entryName` 为参数的函数，并返回文件名。
+
+如果软件包导入了 CSS，`cssFileName` 可用于指定 CSS 输出文件的名称。如果设置为字符串，则默认值与 `fileName` 相同，否则也会回退到 `package.json` 中的 `"name"`。
+
+vite.config.js
+
+js
+
+```
+import {
+
+defineConfig
+
+ } from 'vite'
+
+export default
+
+defineConfig
+
+({
+
+build
+
+: {
+
+lib
+
+: {
+
+entry
+
+: ['src/main.js'],
+
+fileName
+
+: (
+
+format
+
+,
+
+entryName
+
+) => `my-lib-${
+
+entryName
+
+}.${
+
+format
+
+}.js`,
+
+cssFileName
+
+: 'my-lib-style',
+    },
+  },
+})
+```
+## build.license
+
+- 类型： `boolean | { fileName?: string }`
+- 默认值： `false`
+- 相关内容： 许可证
+
+当设置为 `true` 时，构建过程将生成一个 `.vite/license.md` 文件，其中包含所有打包依赖项的许可证信息。
+
+如果传入了 `fileName` 参数，它将被用作相对于 `outDir` 的许可证文件名。如果文件名以 `.json` 结尾，则会生成原始的 JSON 元数据，并可以用于进一步处理。例如：
+
+json
+
+```
+[
+  {
+    "name": "dep-1",
+    "version": "1.2.3",
+    "identifier": "CC0-1.0",
+    "text": "CC0 1.0 Universal\n\n..."
+  },
+  {
+    "name": "dep-2",
+    "version": "4.5.6",
+    "identifier": "MIT",
+    "text": "MIT License\n\n..."
+  }
+]
+```
+TIP
+
+如果你想在构建的代码中引用许可证文件，可以使用 `build.rolldownOptions.output.postBanner` 在文件顶部插入注释。例如：
+
+vite.config.js
+
+js
+
+```
+import {
+
+defineConfig
+
+ } from 'vite'
+
+export default
+
+defineConfig
+
+({
+
+build
+
+: {
+
+license
+
+: true,
+
+rolldownOptions
+
+: {
+
+output
+
+: {
+
+postBanner
+
+:
+          '/* See licenses of bundled dependencies at https://example.com/license.md */',
+      },
+    },
+  },
+})
+```
+## build.manifest
+
+- 类型： `boolean | string`
+- 默认值： `false`
+- 相关内容： 后端集成
+
+是否生成一个 manifest 文件，包含了没有被 hash 过的资源文件名和 hash 后版本的映射，然后服务器框架可使用该映射来呈现正确的资源引入链接。
+
+当值为字符串时，将用作相对于 `build.outDir` 的 manifest 文件路径。设置为 `true` 时，路径将是 `.vite/manifest.json`。
+
+如果你正在编写插件，并且需要在构建过程中检查每个输出块或资源的 CSS 和静态资源，你也可以使用 `viteMetadata` 构建输出元数据 API。
+
+## build.ssrManifest
+
+- 类型： `boolean | string`
+- 默认值： `false`
+- 相关链接： 服务端渲染
+
+是否生成 SSR 的 manifest 文件，以确定生产中的样式链接与资源预加载指令。
+
+当值为字符串时，将用作相对于 `build.outDir` 的 manifest 文件路径。设置为 `true` 时，路径将是 `.vite/ssr-manifest.json`。
+
+## build.ssr
+
+- 类型： `boolean | string`
+- 默认值： `false`
+- 相关链接： 服务端渲染
+
+生成面向 SSR 的构建。此选项的值可以是字符串，用于直接指定 SSR 入口；也可以为 `true`，但这需要通过 `input` 或 `build.rolldownOptions.input` 指定 SSR 入口。
+
+## build.emitAssets
+
+- 类型： `boolean`
+- 默认值： `false`
+
+在非客户端的构建过程中，静态资源并不会被输出，因为我们默认它们会作为客户端构建的一部分被输出。这个选项允许框架在其他环境的构建中强制输出这些资源。而将这些资源合并起来则是框架在构建后步骤中的责任。
+
+## build.ssrEmitAssets
+
+- 类型： `boolean`
+- 默认值： `false`
+
+在 SSR 构建期间，静态资源不会被输出，因为它们通常被认为是客户端构建的一部分。这个选项允许框架强制在客户端和 SSR 构建中都输出它们。将静态资源在构建后合并是框架的责任。一旦环境 API 稳定，这个选项将被 `build.emitAssets` 替代。
+
+## build.minify
+
+- 类型： `boolean | 'oxc' | 'terser' | 'esbuild'`
+- 默认值： 客户端构建默认为 `'oxc'`，SSR 构建默认为 `false`
+
+设置为 `false` 可以禁用最小化混淆，或是用来指定使用哪种混淆器。默认使用 Oxc Minifier，它比 Terser 快 30~90 倍，但压缩率仅差 0.5~2%。基准测试
+
+`build.minify: 'esbuild'` 已弃用，将在未来版本中移除。
+
+注意，在 lib 模式下使用 `'es'` 时，`build.minify` 选项不会缩减空格，因为会移除掉 pure 标注，导致破坏 tree-shaking。
+
+当设置为 `'esbuild'` 或 `'terser'` 时，必须分别安装 esbuild 或 Terser。
+
+sh
+
+```
+npm add -D esbuild
+npm add -D terser
+```
+## build.terserOptions
+
+- 类型： `TerserOptions`
+
+传递给 Terser 的更多 minify 选项。
+
+此外，你还可以传递一个 `maxWorkers: number` 选项来指定最大的工作线程数。默认为 CPU 核心数减 1。
+
+## build.write
+
+- 类型： `boolean`
+- 默认值： `true`
+
+设置为 `false` 来禁用将构建后的文件写入磁盘。这常用于 编程式地调用 `build()` 在写入磁盘之前，需要对构建后的文件进行进一步处理。
+
+## build.emptyOutDir
+
+- 类型： `boolean`
+- 默认值： 若 `outDir` 在 `root` 目录下，则为 `true`
+
+默认情况下，若 `outDir` 在 `root` 目录下，则 Vite 会在构建时清空该目录。若 `outDir` 在根目录之外则会抛出一个警告避免意外删除掉重要的文件。可以设置该选项来关闭这个警告。该功能也可以通过命令行参数 `--emptyOutDir` 来使用。
+
+## build.copyPublicDir
+
+- 类型： `boolean`
+- 默认值： `true`
+
+默认情况下，Vite 会在构建阶段将 `publicDir` 目录中的所有文件复制到 `outDir` 目录中。可以通过设置该选项为 `false` 来禁用该行为。
+
+## build.reportCompressedSize
+
+- 类型： `boolean`
+- 默认值： `true`
+
+启用/禁用 gzip 压缩大小报告。压缩大型输出文件可能会很慢，因此禁用该功能可能会提高大型项目的构建性能。
+
+## build.chunkSizeWarningLimit
+
+- 类型： `number`
+- 默认值： `500`
+
+规定触发警告的 chunk 大小（以 kB 为单位）。它将与未压缩的 chunk 大小进行比较，因为 JavaScript 大小本身与执行时间相关。
+
+## build.watch
+
+- 类型： `WatcherOptions``| null`
+- 默认值： `null`
+
+设置为 `{}` 则会启用 Rolldown 的监听器。对于只在构建阶段或者集成流程使用的插件很常用。
+
+在 Windows Linux 子系统（WSL）上使用 Vite
+
+某些情况下 WSL2 的文件系统监听可能无法正常工作。 查看 `server.watch` 了解更多细节。

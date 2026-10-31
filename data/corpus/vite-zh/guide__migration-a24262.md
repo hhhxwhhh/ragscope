@@ -1,0 +1,388 @@
+> 来源：https://cn.vite.dev/guide/migration
+
+# 从 v7 迁移
+
+如果你正在从 `rolldown-vite`（面向 Vite 6 和 Vite 7 的 Rolldown 集成技术预览版本）迁移，那么本页只有标题中包含 NRV 的部分适用。
+
+## 浏览器兼容性目标变更 NRV
+
+`build.target` 和 `'baseline-widely-available'` 的默认浏览器值已更新为较新的浏览器版本：
+
+- Chrome 107 → 111
+- Edge 107 → 111
+- Firefox 104 → 114
+- Safari 16.0 → 16.4
+
+这些浏览器版本符合 Baseline 在 2026-01-01 时的“广泛可用”功能集。换句话说，它们都发布于大约两年半前。
+
+## Rolldown
+
+Vite 8 使用基于 Rolldown 和 Oxc 的工具，而不是 esbuild 和 Rollup。
+
+### 渐进式迁移
+
+`rolldown-vite` 包提供了由 Rolldown 驱动的 Vite 7，但不包含 Vite 8 的其他变更。这可作为迁移到 Vite 8 的中间步骤。请参阅 Vite 7 文档中的 Rolldown 集成指南，了解如何从 Vite 7 切换到 `rolldown-vite`。
+
+对于从 `rolldown-vite` 迁移到 Vite 8 的用户，你可以撤销 `package.json` 中的依赖变更并更新到 Vite 8：
+
+json
+
+```
+{
+  "devDependencies": {
+    "vite": "npm:[email protected]"
+    "vite": "^8.0.0"
+  }
+}
+```
+### 依赖优化器现在使用 Rolldown
+
+现在依赖优化使用 Rolldown 而不是 esbuild。Vite 仍然通过自动将 `optimizeDeps.esbuildOptions` 转换为 `optimizeDeps.rolldownOptions` 来支持向后兼容。`optimizeDeps.esbuildOptions` 现在已被弃用，将来会被移除，我们鼓励你迁移到 `optimizeDeps.rolldownOptions`。
+
+以下选项会自动转换：
+
+- `esbuildOptions.minify` -> `rolldownOptions.output.minify`
+- `esbuildOptions.treeShaking` -> `rolldownOptions.treeshake`
+- `esbuildOptions.define` -> `rolldownOptions.transform.define`
+- `esbuildOptions.loader` -> `rolldownOptions.moduleTypes`
+- `esbuildOptions.preserveSymlinks` -> `!rolldownOptions.resolve.symlinks`
+- `esbuildOptions.resolveExtensions` -> `rolldownOptions.resolve.extensions`
+- `esbuildOptions.mainFields` -> `rolldownOptions.resolve.mainFields`
+- `esbuildOptions.conditions` -> `rolldownOptions.resolve.conditionNames`
+- `esbuildOptions.keepNames` -> `rolldownOptions.output.keepNames`
+- `esbuildOptions.platform` -> `rolldownOptions.platform`
+- `esbuildOptions.plugins` -> `rolldownOptions.plugins`（部分支持）
+
+你可以从 `configResolved` 钩子中获取由兼容层设置的选项：
+
+js
+
+```
+const plugin = {
+  name: 'log-config',
+  configResolved(config) {
+    console.log('options', config.optimizeDeps.rolldownOptions)
+  },
+},
+```
+### 使用 Oxc 转换 JavaScript
+
+现在使用 Oxc 进行 JavaScript 转换，而不是 esbuild。Vite 仍然通过自动将 `esbuild` 选项转换为 `oxc` 来支持向后兼容。`esbuild` 现在已被弃用，将来会被移除，我们鼓励你迁移到 `oxc`。
+
+以下选项会自动转换：
+
+- `esbuild.jsxInject` -> `oxc.jsxInject`
+- `esbuild.include` -> `oxc.include`
+- `esbuild.exclude` -> `oxc.exclude`
+- `esbuild.jsx` -> `oxc.jsx`
+- `esbuild.jsx: 'preserve'` -> `oxc.jsx: 'preserve'`
+- `esbuild.jsx: 'automatic'` -> `oxc.jsx: { runtime: 'automatic' }`
+- `esbuild.jsxImportSource` -> `oxc.jsx.importSource`
+- `esbuild.jsx: 'transform'` -> `oxc.jsx: { runtime: 'classic' }`
+- `esbuild.jsxFactory` -> `oxc.jsx.pragma`
+- `esbuild.jsxFragment` -> `oxc.jsx.pragmaFrag`
+- `esbuild.jsxDev` -> `oxc.jsx.development`
+- `esbuild.jsxSideEffects` -> `oxc.jsx.pure`
+- `esbuild.define` -> `oxc.define`
+- `esbuild.banner` -> 使用 `transform` 钩子的自定义插件
+- `esbuild.footer` -> 使用 `transform` 钩子的自定义插件
+
+`esbuild.supported` 选项不被 Oxc 支持。如果你需要这个选项，请查看 oxc-project/oxc#15373。
+
+你可以从 `configResolved` 钩子中获取由兼容层设置的选项：
+
+js
+
+```
+const plugin = {
+  name: 'log-config',
+  configResolved(config) {
+    console.log('options', config.oxc)
+  },
+},
+```
+目前，Oxc 转换器尚不支持对原生装饰器进行降级转换，因为我们仍在等待相关规范取得进展，详见 oxc-project/oxc#9170。
+
+原生装饰器降级转换的临时解决方案
+
+目前可以使用 Babel 或 SWC 暂时对原生装饰器进行降级转换。
+
+使用 Babel：
+
+npmYarnpnpmBunDeno
+
+bash
+
+```
+$ npm install -D @rolldown/plugin-babel @babel/plugin-proposal-decorators
+```
+bash
+
+```
+$ yarn add -D @rolldown/plugin-babel @babel/plugin-proposal-decorators
+```
+bash
+
+```
+$ pnpm add -D @rolldown/plugin-babel @babel/plugin-proposal-decorators
+```
+bash
+
+```
+$ bun add -D @rolldown/plugin-babel @babel/plugin-proposal-decorators
+```
+bash
+
+```
+$ deno add -D npm:@rolldown/plugin-babel npm:@babel/plugin-proposal-decorators
+```
+vite.config.ts
+
+ts
+
+```
+import { defineConfig } from 'vite'
+import babel from '@rolldown/plugin-babel'
+
+function decoratorPreset(options: Record<string, unknown>) {
+  return {
+    preset: () => ({
+      plugins: [['@babel/plugin-proposal-decorators', options]],
+    }),
+    rolldown: {
+      // 仅当文件包含装饰器时才运行此转换。
+      filter: {
+        code: '@',
+      },
+    },
+  }
+}
+
+export default defineConfig({
+  plugins: [babel({ presets: [decoratorPreset({ version: '2023-11' })] })],
+})
+```
+使用 SWC：
+
+npmYarnpnpmBunDeno
+
+bash
+
+```
+$ npm install -D @rollup/plugin-swc @swc/core
+```
+bash
+
+```
+$ yarn add -D @rollup/plugin-swc @swc/core
+```
+bash
+
+```
+$ pnpm add -D @rollup/plugin-swc @swc/core
+```
+bash
+
+```
+$ bun add -D @rollup/plugin-swc @swc/core
+```
+bash
+
+```
+$ deno add -D npm:@rollup/plugin-swc npm:@swc/core
+```
+js
+
+```
+import { defineConfig, withFilter } from 'vite'
+import swc from '@rollup/plugin-swc'
+
+export default defineConfig({
+  // ...
+  plugins: [
+    withFilter(
+      swc({
+        swc: {
+          jsc: {
+            parser: { decorators: true, decoratorsBeforeExport: true },
+            transform: { decoratorVersion: '2023-11' },
+          },
+        },
+      }),
+      // 仅当文件包含装饰器时才运行此转换。
+      { transform: { code: '@' } },
+    ),
+  ],
+})
+```
+#### esbuild 回退机制
+
+`esbuild` 不再由 Vite 直接使用，现为可选依赖。如果你使用的插件调用了 `transformWithEsbuild` 函数，需要将 `esbuild` 安装为 `devDependency`。`transformWithEsbuild` 函数已被弃用，将来会被移除。我们建议改用新的 `transformWithOxc` 函数。
+
+### 使用 Oxc 进行 JavaScript 压缩
+
+现在使用 Oxc 压缩器进行 JavaScript 压缩，而不是 esbuild。你可以使用已弃用的 `build.minify: 'esbuild'` 选项切换回 esbuild。这个配置选项将来会被移除，你需要将 `esbuild` 安装为 `devDependency`，因为 Vite 不再直接依赖 esbuild。
+
+如果你之前使用 `esbuild.minify*` 选项来控制压缩行为，现在可以改用 `build.rolldownOptions.output.minify`。如果你之前使用 `esbuild.drop` 选项，现在可以改用 `build.rolldownOptions.output.minify.compress.drop*` 选项。
+
+Oxc 不支持属性混淆及其相关选项（`mangleProps`、`reserveProps`、`mangleQuoted`、`mangleCache`）。如果你需要这些选项，请查看 oxc-project/oxc#15375。
+
+esbuild 和 Oxc 压缩器对源代码做出了略微不同的假设。如果你怀疑压缩器导致了代码损坏，可以在此处比较这些假设：
+
+- esbuild 压缩假设
+- Oxc 压缩器假设
+
+请报告你在 JavaScript 应用程序中发现的任何与压缩相关的问题。
+
+### 使用 Lightning CSS 进行 CSS 压缩
+
+现在默认使用 Lightning CSS 进行 CSS 压缩。你可以使用 `build.cssMinify: 'esbuild'` 选项切换回 esbuild。请注意，你需要将 `esbuild` 安装为 `devDependency`。
+
+Lightning CSS 能更好地进行语法降级，但 CSS 构建产物的体积可能会略有增加。
+
+### 一致的 CommonJS 互操作性
+
+现在以一致的方式处理来自 CommonJS（CJS）模块的 `default` 导入。
+
+如果符合以下条件之一，则 `default` 导入是被导入的 CJS 模块的 `module.exports` 值。否则，`default` 导入是被导入的 CJS 模块的 `module.exports.default` 值：
+
+- 导入者是 `.mjs` 或 `.mts` 文件。
+- 导入者最近的 `package.json` 文件中 `type` 字段设置为 `module`。
+- 被导入的 CJS 模块的 `module.exports.__esModule` 值未设置为 `true`。
+之前的行为
+
+在开发环境中，如果符合以下条件之一，则 `default` 导入是被导入的 CJS 模块的 `module.exports` 值。否则，`default` 导入是被导入的 CJS 模块的 `module.exports.default` 值：
+
+- 导入者包含在依赖优化中 且为 `.mjs` 或 `.mts` 文件。
+- 导入者包含在依赖优化中 且导入者最近的 `package.json` 文件中 `type` 字段设置为 `module`。
+- 被导入的 CJS 模块的 `module.exports.__esModule` 值未设置为 `true`。
+
+在构建时，条件为：
+
+- 被导入的 CJS 模块的 `module.exports.__esModule` 值未设置为 `true`。
+- `module.exports` 的 `default` 属性不存在。
+
+（假设 `build.commonjsOptions.defaultIsModuleExports` 保持为默认值 `'auto'`。）
+
+有关此问题的更多详细信息，请参阅 Rolldown 的文档：CJS 模块中存在歧义的 `default` 导入 - 打包 CJS | Rolldown。
+
+此更改可能会破坏一些现有的 CJS 模块导入代码。你可以使用已弃用的 `legacy.inconsistentCjsInterop: true` 选项临时恢复之前的行为。如果你发现某个包受此更改影响，请向包作者报告问题或提交拉取请求。请务必附上上述 Rolldown 文档的链接，以便作者理解上下文。
+
+### 移除使用格式探测的模块解析机制
+
+当 `package.json` 中同时存在 `browser` 和 `module` 字段时，Vite 以前会根据文件内容来解析字段，并为浏览器选择 ESM 文件。引入这一机制是因为一些包使用 `module` 字段指向 Node.js 的 ESM 文件，而其他包使用 `browser` 字段指向浏览器的 UMD 文件。鉴于现代 `exports` 字段解决了这个问题并且现在被许多包采用，Vite 不再使用这种启发式方法，而是始终遵循 `resolve.mainFields` 选项的顺序。如果你依赖此行为，可以使用 `resolve.alias` 选项将字段映射到所需的文件，或使用包管理器应用补丁（例如 `patch-package`、`pnpm patch`）。
+
+### 外部化模块的 `require` 调用
+
+现在外部化模块的 `require` 调用会被保留为 `require` 调用，而不会被转换为 `import` 语句。这是为了保持 `require` 调用的语义。如果你想将它们转换为 `import` 语句，可以使用 Rolldown 内置的 `esmExternalRequirePlugin`，该插件由 `vite` 重新导出。
+
+js
+
+```
+import { defineConfig, esmExternalRequirePlugin } from 'vite'
+
+export default defineConfig({
+  // ...
+  plugins: [
+    esmExternalRequirePlugin({
+      external: ['react', 'vue', /^node:/],
+    }),
+  ],
+})
+```
+有关更多详细信息，请参阅 Rolldown 的文档：`require` 外部模块 - 打包 CJS | Rolldown。
+
+### UMD/IIFE 中的 `import.meta.url`
+
+在 UMD/IIFE 输出格式中，不再为 `import.meta.url` 提供 polyfill。默认情况下，它将被替换为 `undefined`。如果你更喜欢之前的行为，可以使用 `define` 选项配合 `build.rolldownOptions.output.intro` 选项。有关更多详细信息，请参阅 Rolldown 的文档：非 ESM 输出格式中的常见 `import.meta` 属性 | Rolldown。
+
+### 移除了 `build.rollupOptions.watch.chokidar` 选项
+
+`build.rollupOptions.watch.chokidar` 选项已被移除。请迁移到 `build.rolldownOptions.watch.watcher` 选项。
+
+### 移除 `build.rollupOptions.output.manualChunks` 的对象形式并弃用其函数形式
+
+`output.manualChunks` 选项的对象形式不再支持。`output.manualChunks` 的函数形式已弃用。Rolldown 提供了更灵活的 `codeSplitting` 选项。有关 `codeSplitting` 的更多详细信息，请参阅 Rolldown 的文档：手动代码分割 - Rolldown。
+
+### `build()` 抛出 `BundleError`
+
+此更改仅影响 JS API 用户。
+
+`build()` 现在抛出 `BundleError`，而不是插件中抛出的原始错误。`BundleError` 的类型为 `Error & { errors?: RolldownError[] }`，它会将各个错误包装在 `errors` 数组中。若要访问这些错误，请使用 `.errors`：
+
+js
+
+```
+try {
+  await build()
+} catch (e) {
+  if (e.errors) {
+    for (const error of e.errors) {
+      console.log(error.code) // 错误代码
+    }
+  }
+}
+```
+### 模块类型支持和自动检测
+
+此更改仅影响插件作者。
+
+Rolldown 对 模块类型 提供了实验性支持，类似于 esbuild 的 `loader` 选项。因此，Rolldown 会根据解析后的 `id` 扩展名自动设置模块类型。如果你在 `load` 或 `transform` 钩子中将其他模块类型的内容转换为 JavaScript，你可能需要在返回值中添加 `moduleType: 'js'`：
+
+js
+
+```
+const plugin = {
+  name: 'txt-loader',
+  load(id) {
+    if (id.endsWith('.txt')) {
+      const content = fs.readFile(id, 'utf-8')
+      return {
+        code: `export default ${JSON.stringify(content)}`,
+        moduleType: 'js',
+      }
+    }
+  },
+}
+```
+以下选项已被弃用，将在未来被移除：
+
+- `build.rollupOptions`：重命名为 `build.rolldownOptions`
+- `worker.rollupOptions`：重命名为 `worker.rolldownOptions`
+- `build.commonjsOptions`：现在无操作效果
+- `build.dynamicImportVarsOptions.warnOnError`: 现在无操作效果
+- `resolve.alias[].customResolver`：请改用带有 `resolveId` 钩子和 `enforce: 'pre'` 的自定义插件。
+
+## 移除了已弃用的功能 NRV
+
+- 不再支持向 `import.meta.hot.accept` 传递 URL。请改为传递一个 `id`。（#21382）
+
+## 进阶
+
+以下破坏性更改预计只会影响少数用例：
+
+- Extglobs 尚未得到支持（rolldown-vite#365）。
+- TypeScript 旧版命名空间仅部分支持：TypeScript 的旧版命名空间功能现在只得到部分支持。更多详情请参阅 Oxc 转换器的相关文档。
+- `define` 不共享对象引用：当你传递一个对象作为 `define` 的值时，每个变量都会有一个单独的对象副本。详见 Oxc 转换器的相关文档。
+- `bundle` 对象变更（`bundle` 是在 `generateBundle` / `writeBundle` 钩子中传递的对象，由 `build` 函数返回）：
+- 不支持赋值给 `bundle[foo]`。Rollup 也不鼓励这样做。请使用 `this.emitFile()` 代替。
+- 引用在钩子之间不共享（rolldown-vite#410）。
+- `structuredClone(bundle)` 会出现 `DataCloneError: #<Object> could not be cloned` 错误。这不再被支持。请使用 `structuredClone({ ...bundle })` 来克隆（rolldown-vite#128）。
+- Rollup 中的所有并行钩子现在均按串行方式执行。详见 Rolldown 的文档。
+- `"use strict";` 有时不会被注入。详见 Rolldown 的文档。
+- 不支持使用 `plugin-legacy` 转换到 ES5 及更低版本（rolldown-vite#452）。
+- 向 `build.target` 选项传递同一浏览器的多个版本现在会报错：esbuild 会选择最新的版本，这可能不是你的本意。
+- Rolldown 尚未支持以下功能，因此 Vite 也不再支持这些功能：
+- `build.rollupOptions.output.format: 'system'` (rolldown#2387)
+- `build.rollupOptions.output.format: 'amd'` (rolldown#2528)
+- `shouldTransformCachedModule` 钩子 (rolldown#4389)
+- `resolveImportMeta` 钩子 (rolldown#1010)
+- `renderDynamicImport` 钩子 (rolldown#4532)
+- `resolveFileUrl` 钩子
+- `parseAst` / `parseAstAsync` 函数现在已被弃用，推荐使用功能更多的 `parseSync` / `parse` 函数。
+- 注释会在 `renderChunk` 钩子之前被移除，而不是之后。
+- 此处 列出之外的注释都会被移除，而 Rollup 只会在相邻代码被移除时才删除注释。
+
+## 从 v6 迁移
+
+请先查阅 Vite v7 文档中的 从 v6 迁移指南（中文版），了解将你的应用迁移到 Vite 7 所需的变更，然后再继续执行本页中的相关更改。

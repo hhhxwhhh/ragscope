@@ -1,0 +1,950 @@
+> 来源：https://cn.vite.dev/guide/api-plugin
+
+# 插件 API
+
+Vite 插件扩展了 Rolldown 的插件接口，添加了一些 Vite 特有的选项。因此，你只需编写一次 Vite 插件，即可使其同时适用于开发环境和构建环境。
+
+建议先阅读 Rolldown 的插件文档，然后再阅读以下章节。
+
+## 致插件创作者
+
+Vite 努力秉承开箱即用的原则，因此在创作一款新插件前，请确保已经阅读过 Vite 的功能指南，避免重复劳作。同时还应查看社区是否存在可用插件，包括 兼容 Rollup 的插件 以及 Vite 的专属插件。
+
+当创作插件时，你可以在 `vite.config.js` 中直接使用它。没必要直接为它创建一个新的 package。当你发现某个插件在你项目中很有用时，可以考虑 在社区中 将其与他人分享。
+
+TIP
+
+在学习、调试或创作插件时，我们建议在你的项目中引入 vite-plugin-inspect。它可以帮助你检查 Vite 插件的中间状态。安装后，你可以访问 `localhost:5173/__inspect/` 来检查你项目的模块和栈信息。请查阅 vite-plugin-inspect 文档 中的安装说明。
+
+## 约定
+
+如果插件不使用 Vite 特定的钩子，并且可以作为 兼容的 Rolldown 插件 实现，则建议使用 Rolldown 插件命名约定。
+
+- Rolldown 插件应该有一个带 `rolldown-plugin-` 前缀、语义清晰的名称。
+- 在 package.json 的 `keywords` 字段中包含 `rolldown-plugin` 和 `vite-plugin` 关键字。
+
+这样，插件也可以用于纯 Rollup 或基于 Rollup 的项目。
+
+对于 Vite 专属的插件：
+
+- Vite 插件应该有一个带 `vite-plugin-` 前缀、语义清晰的名称。
+- 在 package.json 的 `keywords` 字段中添加 `vite-plugin` 关键字。
+- 在插件文档增加一部分关于为什么本插件是一个 Vite 专属插件的详细说明（如，本插件使用了 Vite 特有的插件钩子）。
+
+如果你的插件只适用于特定的框架，它的名字应该遵循以下前缀格式：
+
+- `vite-plugin-vue-` 前缀作为 Vue 插件
+- `vite-plugin-react-` 前缀作为 React 插件
+- `vite-plugin-svelte-` 前缀作为 Svelte 插件
+
+另请参阅 虚拟模块约定。
+
+## 插件配置
+
+用户会将插件添加到项目的 `devDependencies` 中并使用数组形式的 `plugins` 选项配置它们。
+
+vite.config.js
+
+js
+
+```
+import vitePlugin from 'vite-plugin-feature'
+import rollupPlugin from 'rollup-plugin-feature'
+
+export default defineConfig({
+  plugins: [vitePlugin(), rollupPlugin()],
+})
+```
+假值的插件将被忽略，可以用来轻松地启用或停用插件。
+
+`plugins` 也可以接受将多个插件作为单个元素的预设。这对于使用多个插件实现的复杂特性（如框架集成）很有用。该数组将在内部被扁平化（flatten）。
+
+js
+
+```
+// 框架插件
+import frameworkRefresh from 'vite-plugin-framework-refresh'
+import frameworkDevtools from 'vite-plugin-framework-devtools'
+
+export default function framework(config) {
+  return [frameworkRefresh(config), frameworkDevtools(config)]
+}
+```
+vite.config.js
+
+js
+
+```
+import { defineConfig } from 'vite'
+import framework from 'vite-plugin-framework'
+
+export default defineConfig({
+  plugins: [framework()],
+})
+```
+## 简单示例
+
+TIP
+
+通常的惯例是创建一个 Vite/Rolldown/Rollup 插件作为一个返回实际插件对象的工厂函数。该函数可以接受允许用户自定义插件行为的选项。
+
+### 转换自定义文件类型
+
+js
+
+```
+const fileRegex = /\.(my-file-ext)$/
+
+export default function myPlugin() {
+  return {
+    name: 'transform-file',
+
+    transform: {
+      filter: {
+        id: fileRegex,
+      },
+      handler(src, id) {
+        return {
+          code: compileFileToJS(src),
+          map: null // 如果可行将提供 source map
+        }
+      },
+    },
+  }
+}
+```
+### 引入一个虚拟文件
+
+虚拟模块让你可以使用常规 ESM 导入语法，将构建时信息传给源文件。完整约定请参阅 虚拟模块约定。
+
+js
+
+```
+import { exactRegex } from '@rolldown/pluginutils'
+
+export default function myPlugin() {
+  const virtualModuleId = 'virtual:my-module'
+  const resolvedVirtualModuleId = '\0' + virtualModuleId
+
+  return {
+    name: 'my-plugin', // 必须的，将会在 warning 和 error 中显示
+    resolveId: {
+      filter: { id: exactRegex(virtualModuleId) },
+      handler() {
+        return resolvedVirtualModuleId
+      },
+    },
+    load: {
+      filter: { id: exactRegex(resolvedVirtualModuleId) },
+      handler() {
+        return `export const msg = "from virtual module"`
+      },
+    },
+  }
+}
+```
+这使得可以在 JavaScript 中引入这些模块：
+
+js
+
+```
+import { msg } from 'virtual:my-module'
+
+console.log(msg)
+```
+在 Vite 中，由于导入 URL 不允许使用 `\0` 字符，因此在浏览器开发环境中，`\0{id}` 形式的虚拟 ID 最终会被编码为 `/@id/__x00__{id}`。该 ID 会在进入插件管道前解码，因此插件钩子代码不会看到编码后的形式。
+
+## Rolldown 钩子
+
+在开发中，Vite 开发服务器会创建一个插件容器来调用 Rolldown 构建钩子，与 Rolldown 如出一辙。
+
+所有 Rolldown 钩子都是 环境钩子。
+
+以下钩子在服务器启动时被调用：
+
+- `options`
+- `buildStart`
+
+以下钩子会在每个传入模块请求时被调用：
+
+- `resolveId`
+- `load`
+- `transform`
+
+它们还有一个扩展的 `options` 参数，包含其他特定于 Vite 的属性。你可以在 SSR 文档 中查阅更多内容。
+
+一些 `resolveId` 调用的 `importer` 值可能是根目录下的通用 `index.html` 的绝对路径，这是由于 Vite 非打包的开发服务器模式无法始终推断出实际的导入者。对于在 Vite 的解析管道中处理的导入，可以在导入分析阶段跟踪导入者，提供正确的 `importer` 值。
+
+以下钩子在服务器关闭时被调用：
+
+- `buildEnd`
+- `closeBundle`
+
+请注意 `moduleParsed` 钩子在开发中是 不会 被调用的，因为 Vite 为了性能会避免完整的 AST 解析。
+
+Output Generation Hooks （`closeBundle` 除外）在开发期间不会被调用。
+
+## Vite 独有钩子
+
+Vite 插件也可以提供钩子来服务于特定的 Vite 目标。这些钩子会被 Rollup 忽略。
+
+### `config`
+
+- 类型： `(config: UserConfig, env: { mode: 'build' | 'serve', command: string, isSsrBuild?: boolean, isPreview?: boolean }) => UserConfig | null | void`
+- 种类： `async`，`sequential`
+- 作用域： 全局
+在解析 Vite 配置前调用。钩子接收原始用户配置（命令行选项指定的会与配置文件合并）和一个描述配置环境的变量，包含正在使用的 `mode` 和 `command`。它可以返回一个将被深度合并到现有配置中的部分配置对象，或者直接改变配置（如果默认的合并不能达到预期的结果）。
+示例：
+js
+
+```
+// 返回部分配置（推荐）
+const partialConfigPlugin = () => ({
+  name: 'return-partial',
+  config: () => ({
+    resolve: {
+      alias: {
+        foo: 'bar',
+      },
+    },
+  }),
+})
+
+// 直接改变配置（应仅在合并不起作用时使用）
+const mutateConfigPlugin = () => ({
+  name: 'mutate-config',
+  config(config, { command }) {
+    if (command === 'build') {
+      config.root = 'foo'
+    }
+  },
+})
+```
+注意
+用户插件在运行这个钩子之前会被解析，因此在 `config` 钩子中注入其他插件不会有任何效果。
+
+### `configResolved`
+
+- 类型： `(config: ResolvedConfig) => void | Promise<void>`
+- 种类： `async`，`parallel`
+- 作用域： 全局
+在解析 Vite 配置后调用。使用这个钩子读取和存储最终解析的配置。当插件需要根据运行的命令做一些不同的事情时，它也很有用。
+示例：
+js
+
+```
+const examplePlugin = () => {
+  let config
+
+  return {
+    name: 'read-config',
+
+    configResolved(resolvedConfig) {
+      // 存储最终解析的配置
+      config = resolvedConfig
+    },
+
+    // 在其他钩子中使用存储的配置
+    transform(code, id) {
+      if (config.command === 'serve') {
+        // dev: 由开发服务器调用的插件
+      } else {
+        // build: 由 Rollup 调用的插件
+      }
+    },
+  }
+}
+```
+注意，在开发环境下，`command` 的值为 `serve`（在 CLI 中，`vite` 和 `vite dev` 是 `vite serve` 的别名）。
+
+### `configureServer`
+
+- 类型： `(server: ViteDevServer) => (() => void) | void | Promise<(() => void) | void>`
+- 种类： `async`，`sequential`
+- 此外请看 ViteDevServer
+- 作用域： 全局
+是用于配置开发服务器的钩子。最常见的用例是在内部 connect 应用程序中添加自定义中间件：
+js
+
+```
+const myPlugin = () => ({
+  name: 'configure-server',
+  configureServer(server) {
+    server.middlewares.use((req, res, next) => {
+      // 自定义请求处理...
+    })
+  },
+})
+```
+注入后置中间件
+`configureServer` 钩子将在内部中间件被安装前调用，所以自定义的中间件默认会比内部中间件早运行。如果你想注入一个在内部中间件 之后 运行的中间件，你可以从 `configureServer` 返回一个函数，将会在内部中间件安装后被调用：
+js
+
+```
+const myPlugin = () => ({
+  name: 'configure-server',
+  configureServer(server) {
+    // 返回一个在内部中间件安装后
+    // 被调用的后置钩子
+    return () => {
+      server.middlewares.use((req, res, next) => {
+        // 自定义请求处理...
+      })
+    }
+  },
+})
+```
+存储服务器访问
+在某些情况下，其他插件钩子可能需要访问开发服务器实例（例如访问 WebSocket 服务器、文件系统监视程序或模块图）。这个钩子也可以用来存储服务器实例以供其他钩子访问：
+js
+
+```
+const myPlugin = () => {
+  let server
+  return {
+    name: 'configure-server',
+    configureServer(_server) {
+      server = _server
+    },
+    transform(code, id) {
+      if (server) {
+        // 使用 server...
+      }
+    },
+  }
+}
+```
+注意 `configureServer` 在运行生产版本时不会被调用，所以其他钩子需要防范它缺失。
+
+### `configurePreviewServer`
+
+- 类型： `(server: PreviewServer) => (() => void) | void | Promise<(() => void) | void>`
+- 种类： `async`，`sequential`
+- 参见： PreviewServer
+- 作用域： 全局
+与 `configureServer` 相同，但用于预览服务器。`configurePreviewServer` 这个钩子与 `configureServer` 类似，也是在其他中间件安装前被调用。如果你想要在其他中间件 之后 安装一个插件，你可以从 `configurePreviewServer` 返回一个函数，它将会在内部中间件被安装之后再调用：
+js
+
+```
+const myPlugin = () => ({
+  name: 'configure-preview-server',
+  configurePreviewServer(server) {
+    // 返回一个钩子，会在其他中间件安装
+    // 完成后调用
+    return () => {
+      server.middlewares.use((req, res, next) => {
+        // 自定义处理请求 ...
+      })
+    }
+  },
+})
+```
+### `closeServer`
+
+- 类型： `(context: { reason: 'restart' | 'close' }) => void | Promise<void>`
+- 种类： `async`，`parallel`
+- 作用域： 全局
+在开发服务器重启或关闭、且服务器完成清理后调用。通常用于释放在 `configureServer` 中创建的资源。
+`context.reason` 用于区分这两种情况：
+- `'restart'`：服务器正在重启（例如配置文件发生变化，或调用了 `server.restart()`）。
+- `'close'`：服务器正在关闭（例如按下 `q` 快捷键，或调用了 `server.close()`）。
+js
+
+```
+const myPlugin = () => {
+  let resource
+  return {
+    name: 'close-server',
+    configureServer(server) {
+      resource = createResource()
+    },
+    async closeServer({ reason }) {
+      if (reason === 'close') {
+        await resource.dispose()
+      }
+    },
+  }
+}
+```
+### `closePreviewServer`
+
+- 类型： `() => void | Promise<void>`
+- 种类： `async`，`parallel`
+- 作用域： 全局
+与 `closeServer` 相同，但用于预览服务器。预览服务器不会重启，因此没有 `reason`。
+js
+
+```
+const myPlugin = () => {
+  let resource
+  return {
+    name: 'close-preview-server',
+    configurePreviewServer(server) {
+      resource = createResource()
+    },
+    async closePreviewServer() {
+      await resource.dispose()
+    },
+  }
+}
+```
+### `transformIndexHtml`
+
+- 类型： `IndexHtmlTransformHook | { order?: 'pre' | 'post', handler: IndexHtmlTransformHook }`
+- 种类： `async`，`sequential`
+- 作用域： 环境
+转换 `index.html` 的专用钩子。钩子接收当前的 HTML 字符串和转换上下文。上下文在开发期间暴露 `ViteDevServer` 实例，在构建期间暴露 Rollup 输出的包。
+这个钩子可以是异步的，并且可以返回以下其中之一：
+- 经过转换的 HTML 字符串
+- 注入到现有 HTML 中的标签描述符对象数组（`{ tag, attrs, children }`）。每个标签也可以指定它应该被注入到哪里（默认是在 `<head>` 之前）
+- 一个包含 `{ html, tags }` 的对象
+默认情况下 `order` 是 `undefined`，这个钩子会在 HTML 被转换后应用。为了注入一个应该通过 Vite 插件管道的脚本，`order: 'pre'` 指将在处理 HTML 之前应用。`order: 'post'` 是在所有未定义的 `order` 的钩子函数被应用后才应用。
+基础示例：
+js
+
+```
+const htmlPlugin = () => {
+  return {
+    name: 'html-transform',
+    transformIndexHtml(html) {
+      return html.replace(
+        /<title>(.*?)<\/title>/,
+        `<title>Title replaced!</title>`,
+      )
+    },
+  }
+}
+```
+完整钩子签名：
+ts
+
+```
+type IndexHtmlTransformHook = (
+  html: string,
+  ctx: {
+    path: string
+    filename: string
+    server?: ViteDevServer
+    bundle?: import('rolldown').OutputBundle
+    chunk?: import('rolldown').OutputChunk
+    originalUrl?: string
+  },
+) =>
+  IndexHtmlTransformResult | void | Promise<IndexHtmlTransformResult | void>
+
+type IndexHtmlTransformResult =
+  | string
+  | HtmlTagDescriptor[]
+  | {
+      html: string
+      tags: HtmlTagDescriptor[]
+    }
+
+interface HtmlTagDescriptor {
+  tag: string
+  /**
+   * 如果需要，属性值将自动转义。
+   */
+  attrs?: Record<string, string | boolean>
+  children?: string | HtmlTagDescriptor[]
+  /**
+   * 默认值： 'head-prepend'
+   */
+  injectTo?: 'head' | 'body' | 'head-prepend' | 'body-prepend'
+}
+```
+注意
+如果你正在使用一个对入口文件有特殊处理方式的框架（比如 SvelteKit），那么这个钩子就不会被触发。
+
+### `handleHotUpdate`
+
+- 类型： `(ctx: HmrContext) => Array<ModuleNode> | void | Promise<Array<ModuleNode> | void>`
+- 种类： `async`、`sequential`
+- 参见： HMR API
+- 作用域： 环境
+执行自定义 HMR 更新处理。钩子接收一个带有以下签名的上下文对象：
+ts
+
+```
+interface HmrContext {
+  file: string
+  timestamp: number
+  modules: Array<ModuleNode>
+  read: () => string | Promise<string>
+  server: ViteDevServer
+}
+```
+- `modules` 是受更改文件影响的模块数组。它是一个数组，因为单个文件可能映射到多个服务模块（例如 Vue 单文件组件）。
+- `read` 是一个异步读取函数，用于返回文件内容。提供该函数是因为在某些系统上，文件变更回调的触发速度可能过快，编辑器尚未完成对文件的更新；此时直接调用 `fs.readFile` 可能会读取到空内容。传入的 `read` 函数会对这种情况进行处理，使读取行为保持正常和一致。
+钩子可以选择:
+- 过滤和缩小受影响的模块列表，使 HMR 更准确。
+- 返回一个空数组并进行全面刷新：
+js
+
+```
+handleHotUpdate({ server, modules, timestamp }) {
+  // 手动使模块失效
+  const invalidatedModules = new Set()
+  for (const mod of modules) {
+    server.moduleGraph.invalidateModule(
+      mod,
+      invalidatedModules,
+      timestamp,
+      true
+    )
+  }
+  server.ws.send({ type: 'full-reload' })
+  return []
+}
+```
+- 返回一个空数组，并通过向客户端发送自定义事件，来进行完全自定义的 HMR 处理：
+js
+
+```
+handleHotUpdate({ server }) {
+  server.ws.send({
+    type: 'custom',
+    event: 'special-update',
+    data: {}
+  })
+  return []
+}
+```
+客户端代码应该使用 HMR API 注册相应的处理器（这应该被相同插件的 `transform` 钩子注入）：
+js
+
+```
+if (import.meta.hot) {
+  import.meta.hot.on('special-update', (data) => {
+    // 执行自定义更新
+  })
+}
+```
+## 插件上下文 Meta
+
+对于可以访问插件上下文的插件钩子，Vite 会在 `this.meta` 上暴露额外的属性：
+
+- `this.meta.viteVersion`：当前 Vite 版本字符串（例如 `"8.0.0"`）。
+
+检测基于 Rolldown 的 Vite
+
+`this.meta.rolldownVersion` 仅在基于 Rolldown 的 Vite（即 Vite 8+）中可用。你可以用它来检测当前 Vite 实例是否由 Rolldown 驱动：
+
+ts
+
+```
+function versionCheckPlugin(): Plugin {
+  return {
+    name: 'version-check',
+    buildStart() {
+      if (this.meta.rolldownVersion) {
+        // 仅在基于 Rolldown 的 Vite 上运行时才执行某些操作
+      } else {
+        // 在基于 Rollup 的 Vite 上运行时执行其他操作
+      }
+    },
+  }
+}
+```
+## 构建输出元数据
+
+在构建过程中，Vite 会向 Rolldown 的构建输出对象添加一个 Vite 特有的 `viteMetadata` 字段。
+
+可通过以下方式访问：
+
+- `RenderedChunk`（例如在 `renderChunk` 和 `augmentChunkHash` 中）
+- `OutputChunk` 和 `OutputAsset`（例如在 `generateBundle` 和 `writeBundle` 中）
+
+`viteMetadata` 提供:
+
+- `viteMetadata.importedCss: Set<string>`
+- `viteMetadata.importedAssets: Set<string>`
+
+这在编写需要检查生成的 CSS 和静态资源而不依赖于 `build.manifest` 的插件时非常有用。
+
+例子:
+
+vite.config.ts
+
+ts
+
+```
+function outputMetadataPlugin(): Plugin {
+  return {
+    name: 'output-metadata-plugin',
+    enforce: 'post',
+    generateBundle(_, bundle) {
+      for (const output of Object.values(bundle)) {
+        const css = output.viteMetadata?.importedCss
+        const assets = output.viteMetadata?.importedAssets
+        if (!css?.size && !assets?.size) continue
+
+        console.log(output.fileName, {
+          css: css ? [...css] : [],
+          assets: assets ? [...assets] : [],
+        })
+      }
+    },
+  }
+}
+```
+## 引用生成的资源
+
+要从插件中生成资源，请调用 `this.emitFile({ type: 'asset', ... })`。它会返回一个 `referenceId`，你可以用它生成资源的 URL，因为资源的最终文件名要到构建包生成时才能确定。
+
+### 在 JavaScript 中
+
+使用 `import.meta.ROLLDOWN_FILE_URL_<referenceId>`：
+
+js
+
+```
+const referenceId = this.emitFile({
+  type: 'asset',
+  name: 'icon.png',
+  source: fileContent,
+})
+
+// 这是一个 JavaScript 表达式，因此需要使用字符串拼接来追加查询参数或哈希
+return `export default import.meta.ROLLDOWN_FILE_URL_${referenceId} + '#frag'`
+```
+### 在 CSS 或 HTML 中
+
+`import.meta.ROLLDOWN_FILE_URL_<referenceId>` 只能在 JavaScript 表达式位置使用。在 CSS 或 HTML 中，应改用 `__VITE_ASSET__<referenceId>__` 标记，并将查询参数或哈希直接追加在其后：
+
+css
+
+```
+background: url(__VITE_ASSET__<referenceId>__#frag);
+```
+## 插件顺序
+
+一个 Vite 插件可以额外指定一个 `enforce` 属性（类似于 webpack 加载器）来调整它的应用顺序。`enforce` 的值可以是 `pre` 或 `post`。解析后的插件将按照以下顺序排列：
+
+- Alias
+- 带有 `enforce: 'pre'` 的用户插件
+- Vite 核心插件
+- 没有 enforce 值的用户插件
+- Vite 构建用的插件
+- 带有 `enforce: 'post'` 的用户插件
+- Vite 后置构建插件（最小化、manifest、报告）
+
+请注意，这与钩子排序是分开的，钩子仍然像往常一样单独受其 `order` 属性 的约束。
+
+## 按需应用
+
+默认情况下插件在开发（serve）和构建（build）模式中都会调用。如果插件只需要在预览或构建期间有条件地应用，请使用 `apply` 属性指明它们仅在 `'build'` 或 `'serve'` 模式时调用：
+
+js
+
+```
+function myPlugin() {
+  return {
+    name: 'build-only',
+    apply: 'build' // 或 'serve'
+  }
+}
+```
+同时，还可以使用函数来进行更精准的控制：
+
+js
+
+```
+apply(config, { command }) {
+  // 非 SSR 情况下的 build
+  return command === 'build' && !config.build.ssr
+}
+```
+## Rolldown 插件兼容性
+
+相当数量的 Rolldown / Rollup 插件将直接作为 Vite 插件工作（例如：`@rollup/plugin-alias` 或 `@rollup/plugin-json`），但并不是所有的，因为有些插件钩子在非构建式的开发服务器上下文中没有意义。
+
+一般来说，只要 Rolldown / Rollup 插件符合以下标准，它就应该像 Vite 插件一样工作：
+
+- 它不使用 `moduleParsed` 钩子。
+- 它不依赖 Rolldown 特有的选项，例如 `transform.inject`。
+- 它在打包钩子和输出钩子之间没有很强的耦合。
+
+如果一个 Rolldown / Rollup 插件只在构建阶段有意义，则在 `build.rolldownOptions.plugins` 下指定即可。它的工作原理与 Vite 插件的 `enforce: 'post'` 和 `apply: 'build'` 相同。
+
+你也可以用 Vite 独有的属性来扩展现有的 Rolldown / Rollup 插件:
+
+vite.config.js
+
+js
+
+```
+import example from 'rolldown-plugin-example'
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  plugins: [
+    {
+      ...example(),
+      enforce: 'post',
+      apply: 'build',
+    },
+  ],
+})
+```
+## 路径规范化
+
+Vite 对路径进行了规范化处理，在解析路径时使用 POSIX 分隔符（ / ），同时保留了 Windows 中的卷名。而另一方面，Rollup 在默认情况下保持解析的路径不变，因此解析的路径在 Windows 中会使用 win32 分隔符（ \ ）。然而，Rollup 插件会使用 `@rollup/pluginutils` 内部的 `normalizePath` 工具函数，它在执行比较之前将分隔符转换为 POSIX。所以意味着当这些插件在 Vite 中使用时，`include` 和 `exclude` 两个配置模式，以及与已解析路径比较相似的路径会正常工作。
+
+所以对于 Vite 插件来说，在将路径与已解析的路径进行比较时，首先规范化路径以使用 POSIX 分隔符是很重要的。从 `vite` 模块中也导出了一个等效的 `normalizePath` 工具函数。
+
+js
+
+```
+import { normalizePath } from 'vite'
+
+normalizePath('foo\\bar') // 'foo/bar'
+normalizePath('foo/bar') // 'foo/bar'
+```
+## 过滤与 include/exclude 模式
+
+Vite 暴露了 `@rollup/pluginutils` 的 `createFilter` 函数，以支持 Vite 独有插件和集成使用标准的 include/exclude 过滤模式，Vite 核心自身也正在使用它。
+
+### 钩子过滤功能
+
+Rolldown 引入了 钩子过滤器功能，以减少 Rust 和 JavaScript 运行时之间的通信开销。此功能允许插件指定确定何时调用钩子的模式，从而通过避免不必要的钩子调用来提高性能。
+
+Rollup 4.38.0+ 和 Vite 6.3.0+ 也支持此功能。为了使你的插件向后兼容旧版本，请确保在钩子处理程序中也运行该过滤器。
+
+js
+
+```
+export default function myPlugin() {
+  const jsFileRegex = /\.js$/
+
+  return {
+    name: 'my-plugin',
+    // 例如：仅调用 .js 的文件的 transform
+    transform: {
+      filter: {
+        id: jsFileRegex,
+      },
+      handler(code, id) {
+        // 额外的向后兼容性检查
+        if (!jsFileRegex.test(id)) return null
+
+        return {
+          code: transformCode(code),
+          map: null,
+        }
+      },
+    },
+  }
+}
+```
+TIP
+
+`@rolldown/pluginutils` 导出一些用于钩子过滤器的实用程序，如 `exactRegex` 和 `prefixRegex`。为了方便起见，这些内容也会从 `rolldown/filter` 重新导出。
+
+## 代码块导入映射信息
+
+实验性
+
+此功能是实验性的，未来可能会发生变化。
+
+启用 `build.chunkImportMap` 选项后，生成代码块中的导入语句将使用每个代码块的唯一 ID，而不是文件路径。
+
+要获取代码块 ID 到文件路径的映射，可以在 `generateBundle` 或 `writeBundle` 钩子中访问输出到 bundle 的导入映射。导入映射的名称由 `build.rolldownOptions.experimental.chunkImportMap.fileName` 指定（默认为 `importmap.json`）。
+
+ts
+
+```
+function accessImportMap() {
+  let config: ResolvedConfig
+  return {
+    name: 'access-import-map',
+    configResolved(resolvedConfig) {
+      config = resolvedConfig
+    },
+    generateBundle(options, bundle) {
+      const chunkImportMap =
+        config.build.rolldownOptions.experimental?.chunkImportMap
+      if (chunkImportMap) {
+        const importMapFilename =
+          typeof chunkImportMap === 'object' && chunkImportMap.fileName
+            ? chunkImportMap.fileName
+            : 'importmap.json'
+        const importMap = bundle[importMapFilename]! as OutputAsset
+        const mapping = JSON.parse(importMap.source).imports
+        console.log(mapping)
+        // { "./entry.hash1.js": "./entry.hash2.js" }
+      }
+    },
+  }
+}
+```
+## 客户端与服务端间通信
+
+从 Vite 2.9 开始，我们为插件提供了一些实用工具，以帮助处理与客户端的通信。
+
+### 服务端到客户端
+
+在插件一侧，我们可以使用 `server.ws.send` 来向客户端广播事件：
+
+vite.config.js
+
+js
+
+```
+export default defineConfig({
+  plugins: [
+    {
+      // ...
+      configureServer(server) {
+        server.ws.on('connection', () => {
+          server.ws.send('my:greetings', { msg: 'hello' })
+        })
+      },
+    },
+  ],
+})
+```
+注意
+
+我们建议总是给你的事件名称 添加前缀，以避免与其他插件冲突。
+
+在客户端侧，使用 `hot.on` 去监听事件：
+
+ts
+
+```
+// 客户端
+if (import.meta.
+
+hot
+
+) {
+  import.meta.
+
+hot
+
+.
+
+on
+
+('my:greetings', (
+
+data
+
+) => {
+
+console
+
+.
+
+log
+
+(
+
+data
+
+.msg) // hello
+  })
+}
+```
+### 客户端到服务端
+
+为了从客户端向服务端发送事件，我们可以使用 `hot.send`：
+
+ts
+
+```
+// 客户端
+if (import.meta.hot) {
+  import.meta.hot.send('my:from-client', { msg: 'Hey!' })
+}
+```
+然后使用 `server.ws.on` 并在服务端监听这些事件：
+
+vite.config.js
+
+js
+
+```
+export default defineConfig({
+  plugins: [
+    {
+      // ...
+      configureServer(server) {
+        server.ws.on('my:from-client', (data, client) => {
+          console.log('Message from client:', data.msg) // Hey!
+          //  只回复客户端（如果需要的话）
+          client.send('my:ack', { msg: 'Hi! I got your message!' })
+        })
+      },
+    },
+  ],
+})
+```
+### 自定义事件的 TypeScript 类型定义指南
+
+Vite 会在内部从 `CustomEventMap` 这个接口推断出 payload 的类型，可以通过扩展这个接口来为自定义事件进行类型定义：
+
+提示
+
+在指定 TypeScript 声明文件时，确保包含 `.d.ts` 扩展名。否则，TypeScript 可能不会知道试图扩展的是哪个文件。
+
+events.d.ts
+
+ts
+
+```
+import 'vite/types/customEvent.d.ts'
+
+declare module 'vite/types/customEvent.d.ts' {
+  interface CustomEventMap {
+    'custom:foo': { msg: string }
+    // 'event-key': payload
+  }
+}
+```
+这个接口扩展被 `InferCustomEventPayload<T>` 所使用，用来推断事件 `T` 的 payload 类型。要了解更多关于这个接口如何被使用的信息，请参考 HMR API 文档。
+
+ts
+
+```
+type
+
+CustomFooPayload
+
+ =
+
+InferCustomEventPayload
+
+<'custom:foo'>
+import.meta.
+
+hot
+
+?.
+
+on
+
+('custom:foo', (
+
+payload
+
+) => {
+  // payload 的类型为 { msg: string }
+})
+import.meta.
+
+hot
+
+?.
+
+on
+
+('unknown:event', (
+
+payload
+
+) => {
+  // payload 的类型为 any
+})
+```

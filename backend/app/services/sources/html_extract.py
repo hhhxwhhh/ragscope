@@ -244,7 +244,42 @@ def _clean(markdown: str) -> str:
     lines = [line.rstrip() for line in text.split("\n")]
     # Drop lines that ended up as "| | |" from empty table cells.
     lines = [line for line in lines if line.strip() not in {"|", "||", "- |"}]
-    return "\n".join(lines).strip()
+    return _drop_leading_chrome(lines)
+
+
+def _drop_leading_chrome(lines: list[str]) -> str:
+    """Strip a short chrome block sitting above the page's H1.
+
+    Documentation pages put their real body under an H1, so a small block before
+    it is site chrome — a promo banner, a skip link, a "we moved" notice. Vite's
+    docs ship exactly this: every page opens with a conference banner whose only
+    markup hint is ``class="viteconf"``, which no noise-attribute heuristic can
+    see. It was the first three lines of all 39 crawled pages.
+
+    Three guards keep the rule from eating content, each added because a weaker
+    version broke a real page:
+    * only an **H1** anchors it — a page whose first heading is an H2 has no
+      title, and the text above it is the intro;
+    * the leading block must be **short** (<= 200 chars) — a long lead is prose;
+    * it must contain **no list items** — a lead-in list is content, not chrome.
+    """
+    heading_index = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if line.startswith("# ") and not line.startswith("## ")
+        ),
+        None,
+    )
+    if not heading_index:
+        return "\n".join(lines).strip()
+
+    lead = lines[:heading_index]
+    if any(line.lstrip().startswith("- ") for line in lead):
+        return "\n".join(lines).strip()
+    if len("".join(lead).strip()) > 200:
+        return "\n".join(lines).strip()
+    return "\n".join(lines[heading_index:]).strip()
 
 
 def extract(html: str, base_url: str = "") -> ExtractedPage:

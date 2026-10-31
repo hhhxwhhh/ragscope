@@ -1,0 +1,326 @@
+> 来源：https://cn.vite.dev/guide/api-environment-plugins
+
+# 用于插件的环境 API
+
+发布候选版本
+
+环境 API 目前处于发布候选阶段。我们将在主要版本发布之间保持 API 的稳定性，以便生态系统能够进行实验并在此基础上进行开发。然而，请注意，某些特定的 API 仍被视为实验性 API。
+
+我们计划在未来主要版本发布时，待下游项目有足够时间对新功能进行实验并验证后，对这些新 API（可能包含兼容性变更）进行稳定化处理。
+
+资料：
+
+- 反馈讨论 我们在此处收集新 API 的反馈。
+- 环境 API PR 新 API 在此处被实现并进行了审查。
+
+请与我们分享你的反馈。
+
+## 环境钩子与全局钩子
+
+插件在共享管道中运行，但它们的钩子分为两类，取决于它们是针对整个服务器运行一次，还是针对每个环境运行一次。
+
+全局钩子只调用一次，与配置了多少个环境无关。它们处理解析配置、设置开发和预览服务器等应用级事务，因此 `this.environment` 与这些钩子无关。与配置解析和服务器相关的钩子都属于全局钩子。
+
+环境钩子会为每个环境各调用一次，并在其上下文中通过 `this.environment` 暴露当前环境。所有 Rolldown 钩子 都是环境钩子，其他处理模块的 Vite 专有钩子也是如此。但请注意，除非设置 `perEnvironmentStartEndDuringDev: true` 标志，否则 `buildStart` 和 `buildEnd` 只会为客户端环境调用。
+
+## 在钩子中访问当前环境
+
+在 Vite 6 之前，由于只有两个环境（`client` 和 `ssr`），一个 `ssr` 布尔值足以在 Vite API 中识别当前环境。插件钩子在最后的选项参数中接收一个 `ssr` 布尔值，多个 API 也期望通过一个可选的 `ssr` 参数来正确地将模块关联到对应的环境（例如 `server.moduleGraph.getModuleByUrl(url, { ssr })`）。
+
+随着可配置的环境出现，我们现在有了一种统一的方法来在插件中访问它们的选项和实例。插件钩子现在在其上下文中暴露 `this.environment`，以前期望 `ssr` 布尔值的 API 现在被限定到正确的环境（例如 `environment.moduleGraph.getModuleByUrl(url)`）。
+
+Vite 服务器有一个共享的插件管道，但在处理模块时，它总是在给定环境的上下文中进行。`environment` 实例在插件上下文中可用。
+
+插件可以使用 `environment` 实例根据环境的配置（可通过 `environment.config` 访问）来改变模块的处理方式。
+
+ts
+
+```
+  transform(code, id) {
+    console.log(this.environment.config.resolve.conditions)
+  }
+```
+## 使用钩子注册新环境
+
+插件可以在 `config` 钩子中添加新环境。例如，RSC 支持 使用一个额外的环境来拥有一个带有 `react-server` 条件的独立模块图：
+
+ts
+
+```
+  config(config: UserConfig) {
+    return {
+      environments: {
+        rsc: {
+          resolve: {
+            conditions: ['react-server', ...defaultServerConditions],
+          },
+        },
+      },
+    }
+  }
+```
+一个空对象就足以注册环境，默认值则来自于根级别的环境配置。
+
+## 使用 `configEnvironment` 钩子配置环境
+
+- 类型： `(name: string, config: EnvironmentOptions, env: { mode: string, command: 'build' | 'serve', isSsrBuild?: boolean, isPreview?: boolean, isSsrTargetWebworker?: boolean }) => EnvironmentOptions | null | void`
+- 种类： `async`、`sequential`
+- 作用域： 环境
+
+当 `config` 钩子正在运行时，我们还不知道完整的环境列表，而且环境可以受到来自根级别环境配置的默认值或通过 `config.environments` 记录明确影响。插件应使用 `config` 钩子设置默认值。要配置每个环境，可以使用新的 `configEnvironment` 钩子。此钩子会为每个环境调用，并传入其部分解析的配置，包括最终默认值的解析。
+
+ts
+
+```
+  configEnvironment(name: string, options: EnvironmentOptions) {
+    // 将 "workerd" 条件增加到 rsc 环境
+    if (name === 'rsc') {
+      return {
+        resolve: {
+          conditions: ['workerd'],
+        },
+      }
+    }
+  }
+```
+## `hotUpdate` 钩子
+
+- 类型： `(this: { environment: DevEnvironment }, options: HotUpdateOptions) => Array<EnvironmentModuleNode> | void | Promise<Array<EnvironmentModuleNode> | void>`
+- 种类： `async`、`sequential`
+- 作用域： 环境
+- 查看： HMR API
+
+`hotUpdate` 钩子允许插件为特定环境执行自定义的 HMR 更新处理。当一个文件发生变化时，会按照 `server.environments` 中的顺序为每个环境依次运行 HMR 算法，因此 `hotUpdate` 钩子会被多次调用。这个钩子会接收一个带有以下签名的上下文对象：
+
+ts
+
+```
+interface HotUpdateOptions {
+  type: 'create' | 'update' | 'delete'
+  file: string
+  timestamp: number
+  modules: Array<EnvironmentModuleNode>
+  read: () => string | Promise<string>
+  server: ViteDevServer
+}
+```
+- `this.environment` 是当前正在处理文件更新的模块执行环境。
+- `modules` 是由于文件更改而受影响的此环境中的模块的数组。它是一个数组，因为一个文件可能映射到多个服务的模块（例如 Vue SFCs）。
+- `read` 是一个异步读取函数，用于返回文件内容。提供该函数是因为在某些系统上，文件变更回调的触发速度可能过快，编辑器尚未完成对文件的更新；此时直接调用 `fs.readFile` 可能会读取到空内容。传入的 `read` 函数会对这种情况进行处理，使读取行为保持正常和一致。
+
+可以选择钩子用于：
+
+- 过滤和缩小受影响的模块列表，使 HMR 更准确。
+- 返回一个空数组并执行完全重载：
+js
+
+```
+hotUpdate({ modules, timestamp }) {
+  if (this.environment.name !== 'client')
+    return
+
+  // 手动使模块失效
+  const invalidatedModules = new Set()
+  for (const mod of modules) {
+    this.environment.moduleGraph.invalidateModule(
+      mod,
+      invalidatedModules,
+      timestamp,
+      true
+    )
+  }
+  this.environment.hot.send({ type: 'full-reload' })
+  return []
+}
+```
+- 返回一个空数组并通过向客户端发送自定义事件来执行完全自定义的 HMR 处理：
+js
+
+```
+hotUpdate() {
+  if (this.environment.name !== 'client')
+    return
+
+  this.environment.hot.send({
+    type: 'custom',
+    event: 'special-update',
+    data: {}
+  })
+  return []
+}
+```
+客户端代码应使用 HMR API 注册相应的处理程序（这可以通过相同插件的 `transform` 钩子注入）：
+js
+
+```
+if (import.meta.hot) {
+  import.meta.hot.on('special-update', (data) => {
+    // 执行自定义更新
+  })
+}
+```
+## 插件中的基于环境的状态
+
+鉴于相同的插件实例会被用于不同的环境，插件的状态需要以 `this.environment` 作为键来存储。这与生态系统中已使用的模式相同，即使用 `ssr` 布尔值作为键来避免混合客户端和 SSR 模块状态的方式。可以使用 `Map<Environment, State>` 来分别为每个环境保存其对应的状态。注意：为了保持向后兼容性，在未设置 `perEnvironmentStartEndDuringDev: true` 标志时，`buildStart` 和 `buildEnd` 仅会针对客户端环境被调用。同样的规则也适用于 `watchChange` 和 `perEnvironmentWatchChangeDuringDev: true` 标志。
+
+js
+
+```
+function PerEnvironmentCountTransformedModulesPlugin() {
+  const state = new Map<Environment, { count: number }>()
+  return {
+    name: 'count-transformed-modules',
+    perEnvironmentStartEndDuringDev: true,
+    buildStart() {
+      state.set(this.environment, { count: 0 })
+    },
+    transform(id) {
+      state.get(this.environment).count++
+    },
+    buildEnd() {
+      console.log(this.environment.name, state.get(this.environment).count)
+    }
+  }
+}
+```
+## 使用 `applyToEnvironment` 钩子的环境插件
+
+- 类型： `(environment: PartialEnvironment) => boolean | PluginOption | Promise<boolean>`
+- 种类： `async`、`sequential`
+- 作用域： 环境
+
+插件可以使用 `applyToEnvironment` 函数来定义它适用的环境。
+
+js
+
+```
+const UnoCssPlugin = () => {
+  // 共享的全局状态
+  return {
+    buildStart() {
+      // 使用 WeakMap<Environment,Data> 初始化每个环境状态
+      // 使用 this.environment
+    },
+    configureServer() {
+      // 正常使用全局钩子
+    },
+    applyToEnvironment(environment) {
+      // 如果此插件应在此环境中激活，则返回 true
+      // 或返回一个新插件来替代它。
+      // 如果不使用这个 hook，则插件在所有环境中都是激活的
+    },
+    resolveId(id, importer) {
+      // 只对此插件适用的环境进行调用
+    },
+  }
+}
+```
+如果一个插件没有环境感知功能，并且其状态没有基于当前环境进行区分，`applyToEnvironment` 钩子可以轻松地将其设置为针对每个环境工作。
+
+js
+
+```
+import { nonShareablePlugin } from 'non-shareable-plugin'
+
+export default defineConfig({
+  plugins: [
+    {
+      name: 'per-environment-plugin',
+      applyToEnvironment(environment) {
+        return nonShareablePlugin({ outputName: environment.name })
+      },
+    },
+  ],
+})
+```
+Vite 输出了一个 `perEnvironmentPlugin` 助手，以简化这些不需要其他钩子的情况：
+
+js
+
+```
+import { nonShareablePlugin } from 'non-shareable-plugin'
+
+export default defineConfig({
+  plugins: [
+    perEnvironmentPlugin('per-environment-plugin', (environment) =>
+      nonShareablePlugin({ outputName: environment.name }),
+    ),
+  ],
+})
+```
+注意，从 `applyToEnvironment` 或 `perEnvironmentPlugin` 返回的插件不应使用 Vite 独有钩子。
+
+`applyToEnvironment` 钩子在配置时调用，目前在 `configResolved` 之后调用，因为生态系统中的项目正在修改其中的插件。未来，环境插件解析可能会移至 `configResolved` 之前。
+
+## 应用程序-插件通信
+
+`environment.hot` 允许插件与给定环境的应用程序端代码进行通信。这相当于 客户端-服务器通信功能，但支持除客户端环境以外的其他环境。
+
+Note
+
+请注意，此功能仅适用于支持 HMR 的环境。
+
+### 管理应用程序实例
+
+需要注意的是，在同一环境中可能有多个应用程序实例在运行。例如，如果你在浏览器中打开了多个标签页，每个标签页都是一个独立的应用程序实例，并且与服务器有独立的连接。
+
+当建立新连接时，会在环境的 `hot` 实例上触发 `vite:client:connect` 事件。当连接关闭时，会触发 `vite:client:disconnect` 事件。
+
+每个事件处理程序都会接收到 `NormalizedHotChannelClient` 作为第二个参数。客户端是一个具有 `send` 方法的对象，可用于向该特定应用程序实例发送消息。对于同一连接，客户端引用始终相同，因此你可以保留它来跟踪连接。
+
+### 使用示例
+
+插件端：
+
+js
+
+```
+configureServer(server) {
+  server.environments.ssr.hot.on('my:greetings', (data, client) => {
+    // 处理数据，
+    // 并可选择向该应用程序实例发送响应
+    client.send('my:foo:reply', `Hello from server! You said: ${data}`)
+  })
+
+  // 向所有应用程序实例广播消息
+  server.environments.ssr.hot.send('my:foo', 'Hello from server!')
+}
+```
+应用程序端与客户端-服务器通信功能相同。你可以使用 `import.meta.hot` 对象向插件发送消息。
+
+## 构建钩子中的环境
+
+与开发期间一样，插件钩子在构建期间也接收环境实例，取代了 `ssr` 布尔值。这同样适用于 `renderChunk`、`generateBundle` 和其他仅在构建时使用的钩子。
+
+在 Vite 6 之前，插件管道在开发和构建期间的工作方式不同：
+
+- 开发期间： 插件是共享的
+- 构建期间： 插件对每个环境是隔离的（在不同的进程中：`vite build` 然后 `vite build --ssr`）。
+
+这迫使框架通过写入文件系统的清单文件在 `client` 构建和 `ssr` 构建之间共享状态。在 Vite 6 中，我们现在在单个进程中构建所有环境，因此插件管道和环境间通信的方式可以与开发对齐。
+
+在未来的主要版本，我们可以实现完全一致：
+
+- 在开发和构建期间： 插件是共享的，并可以 根据环境进行过滤
+
+在构建期间还会共享一个单一的 `ResolvedConfig` 实例，允许在整个应用构建过程中进行缓存，类似于我们在开发期间使用 `WeakMap<ResolvedConfig, CachedData>` 的方式。
+
+对于 Vite 6，我们需要做一个较小的改动以保持向后兼容。生态系统插件当前使用 `config.build` 而不是 `environment.config.build` 来访问配置，因此我们需要默认为每个环境创建一个新的 `ResolvedConfig`。项目可以通过设置 `builder.sharedConfigBuild` 为 `true` 来选择共享完整的配置和插件管道。
+
+此选项最初仅适用于一小部分项目，因此插件作者可以通过将 `sharedDuringBuild` 标志设置为 `true` 来选择特定插件在构建期间共享。这可以很容易地共享常规插件的状态：
+
+js
+
+```
+function myPlugin() {
+  // 在开发和构建中的所有环境之间共享状态
+  const sharedState = ...
+  return {
+    name: 'shared-plugin',
+    transform(code, id) { ... },
+
+    // 选择在所有环境中使用单个实例
+    sharedDuringBuild: true,
+  }
+}
+```

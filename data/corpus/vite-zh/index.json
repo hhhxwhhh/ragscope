@@ -1,0 +1,363 @@
+{
+  "name": "Vite 官方文档（中文）",
+  "slug": "vite-zh",
+  "source": "https://cn.vite.dev/sitemap.xml",
+  "license": "MIT · Vite 官方文档，来源 https://cn.vite.dev/",
+  "generated_at": "2026-10-31T13:19:44.317591+00:00",
+  "count": 39,
+  "chars": 247623,
+  "documents": [
+    {
+      "url": "https://cn.vite.dev/guide/api-environment-frameworks",
+      "title": "用于框架的环境 API | Vite 官方中文文档",
+      "file": "guide__api-environment-frameworks-97d3cd.md",
+      "chars": 10371,
+      "sha256": "c7d16961bd66f13e9fadb0a7e290168d7c6ac8b5823711f23e371c0cd7f132a8",
+      "fetched_at": "2026-10-31T13:19:22.537087+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/api-environment-instances",
+      "title": "使用 Environment 实例 | Vite 官方中文文档",
+      "file": "guide__api-environment-instances-14f844.md",
+      "chars": 6951,
+      "sha256": "817c942025a4baf8c56b97ee4247823ea210a3e848a6e04890f338bea9445455",
+      "fetched_at": "2026-10-31T13:19:23.107856+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/api-environment",
+      "title": "环境 API | Vite 官方中文文档",
+      "file": "guide__api-environment-28a4fe.md",
+      "chars": 3971,
+      "sha256": "f1d48d83655a54e5a567d9f6e98fad442f7811b0fdb7bf5f8b3167a58002a626",
+      "fetched_at": "2026-10-31T13:19:23.606440+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/api-hmr",
+      "title": "HMR API | Vite 官方中文文档 hmr_boundary root parent root->parent boundary parent->boundary edited boundary->edited hmr_boundary root parent root->parent boundary parent->boundary edited boundary->edited",
+      "file": "guide__api-hmr-0394f8.md",
+      "chars": 4943,
+      "sha256": "17159fd9059a906571c1fea3e22ffcdf3ade3d3f7f1e3433387d009b71d19997",
+      "fetched_at": "2026-10-31T13:19:24.061174+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/api-environment-plugins",
+      "title": "用于插件的环境 API | Vite 官方中文文档",
+      "file": "guide__api-environment-plugins-0ecfde.md",
+      "chars": 8139,
+      "sha256": "b7ca21c6b4831028c9edd722fc862b4ec2e9f91625da82170ed2ab643ef8b6da",
+      "fetched_at": "2026-10-31T13:19:24.586068+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/api-environment-runtimes",
+      "title": "用于运行时的环境 API | Vite 官方中文文档 module_runner cluster_server cluster_env cluster_runtime cluster_runner plugins mg plugins->mg hot transport hot->transport evaluator module_runner cluster_server cluster_env cluster_runtime cluster_runner plugins mg plugins->mg hot transport hot->transport evaluator",
+      "file": "guide__api-environment-runtimes-e58d04.md",
+      "chars": 10241,
+      "sha256": "37d08cbf1265fe0daed5a905c0e17f54d7eef382db753b046aad3e8dc2485ed3",
+      "fetched_at": "2026-10-31T13:19:25.047728+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/api-javascript",
+      "title": "JavaScript API | Vite 官方中文文档",
+      "file": "guide__api-javascript-0c8431.md",
+      "chars": 9370,
+      "sha256": "cba599a402b8bbf599d456265bc8c570802206a378d2ab2b4c6569702f09f306",
+      "fetched_at": "2026-10-31T13:19:25.587950+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/api-plugin",
+      "title": "插件 API | Vite 官方中文文档",
+      "file": "guide__api-plugin-6332c9.md",
+      "chars": 18765,
+      "sha256": "5286de869ffd63d3dedf7454bfb202f880eb3b511255ef41b85a354468f7de6a",
+      "fetched_at": "2026-10-31T13:19:26.464154+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/api-vite-runtime",
+      "title": "Vite Runtime API | Vite 官方中文文档",
+      "file": "guide__api-vite-runtime-c0cc1d.md",
+      "chars": 5801,
+      "sha256": "ce2088f5c2de37013c0291742a266923a6a26c98eb1529a912d22696fd9abf10",
+      "fetched_at": "2026-10-31T13:19:26.643695+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/assets",
+      "title": "静态资源处理 | Vite 官方中文文档",
+      "file": "guide__assets-99ba8f.md",
+      "chars": 3428,
+      "sha256": "4f6c7f84b98f19b2785b7cbb26c1d42791d062cff4ae0d5e7c99cf2cb8582c0e",
+      "fetched_at": "2026-10-31T13:19:27.167728+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/backend-integration",
+      "title": "后端集成 | Vite 官方中文文档 manifest foo shared foo->shared foocss foo->foocss bar bar->shared baz bar->baz sharedcss shared->sharedcss logo manifest foo shared foo->shared foocss foo->foocss bar bar->shared baz bar->baz sharedcss shared->sharedcss logo",
+      "file": "guide__backend-integration-2d92e8.md",
+      "chars": 6184,
+      "sha256": "7e6f653d336a82b82033381d789104cd644a1a3f7065c6d345e9d786f3f6650c",
+      "fetched_at": "2026-10-31T13:19:27.577260+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/build",
+      "title": "构建生产版本 | Vite 官方中文文档",
+      "file": "guide__build-e00321.md",
+      "chars": 7769,
+      "sha256": "5576267fb1bfb2658856d0f80a9264a2bfdf6fa1ddc3133c012a57d421b97499",
+      "fetched_at": "2026-10-31T13:19:28.273973+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/cli",
+      "title": "命令行接口 | Vite 官方中文文档",
+      "file": "guide__cli-9469aa.md",
+      "chars": 4290,
+      "sha256": "6e349712ecc67f23d1e0aff8d1a77c69edbad5fee94ee876b6c2be7b8fe16a81",
+      "fetched_at": "2026-10-31T13:19:28.583047+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/comparisons",
+      "title": "与其他工具比较 | Vite 官方中文文档",
+      "file": "guide__comparisons-2f9409.md",
+      "chars": 742,
+      "sha256": "b03e62c242eb7c93311907c6d124a8ae21eb812c8abae6c2e39bb1523f4a7bab",
+      "fetched_at": "2026-10-31T13:19:29.058060+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/dep-pre-bundling",
+      "title": "依赖预构建 | Vite 官方中文文档",
+      "file": "guide__dep-pre-bundling-3e2ada.md",
+      "chars": 2419,
+      "sha256": "246e6dc4f7ac43e7885ecdb4f3e9295ebb02591ea876256bc2ab0e1c0639680e",
+      "fetched_at": "2026-10-31T13:19:29.512403+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/env-and-mode",
+      "title": "环境变量和模式 | Vite 官方中文文档",
+      "file": "guide__env-and-mode-2dcfa9.md",
+      "chars": 5482,
+      "sha256": "6f73ef08b707879621229a299b148de3aedca58fb83e4539c305e10bd10462dd",
+      "fetched_at": "2026-10-31T13:19:30.007348+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/features",
+      "title": "功能 | Vite 官方中文文档",
+      "file": "guide__features-e3521c.md",
+      "chars": 19840,
+      "sha256": "1df39a459620fb928ebe1f0537bb7d9ccccf85423374e26f7ef33f85638c9ae0",
+      "fetched_at": "2026-10-31T13:19:30.590599+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/migration-from-v1",
+      "title": "从 v1 迁移 | Vite 官方中文文档",
+      "file": "guide__migration-from-v1-722e2e.md",
+      "chars": 2728,
+      "sha256": "01c141f0e4748677dd148b9f3ddb6c6c864575011f8d967973b12680f4ce34ac",
+      "fetched_at": "2026-10-31T13:19:31.009364+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/migration-from-v2",
+      "title": "从 v2 迁移 | Vite 官方中文文档",
+      "file": "guide__migration-from-v2-f7ad70.md",
+      "chars": 4612,
+      "sha256": "81324c50a23d4c1b9078a195ecc2ed9b004ed55608cf5f86288586228ef503d5",
+      "fetched_at": "2026-10-31T13:19:31.514836+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/migration-from-v3",
+      "title": "从 v3 迁移 | Vite 官方中文文档",
+      "file": "guide__migration-from-v3-2888ad.md",
+      "chars": 2353,
+      "sha256": "62648364d33a598b67fe8b316dbf17c06478840d52ac53da71bbd6f0c340d1f9",
+      "fetched_at": "2026-10-31T13:19:32.031250+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/migration-from-v4",
+      "title": "从 v4 迁移 | Vite 官方中文文档",
+      "file": "guide__migration-from-v4-d19001.md",
+      "chars": 8924,
+      "sha256": "b1546f9e16731ace1557673f255fde66d8f2864b71f09d21ccee0c6da40323ab",
+      "fetched_at": "2026-10-31T13:19:32.530502+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/migration-from-v5",
+      "title": "从 v5 迁移 | Vite 官方中文文档",
+      "file": "guide__migration-from-v5-c2ffbe.md",
+      "chars": 5409,
+      "sha256": "fd5d0bec7c559f88fce8f4d03794f57405289d47ba55ef3b715817aef5ae3757",
+      "fetched_at": "2026-10-31T13:19:33.038931+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/migration-from-v6",
+      "title": "从 v6 迁移 | Vite 官方中文文档",
+      "file": "guide__migration-from-v6-81dde3.md",
+      "chars": 2351,
+      "sha256": "bacd953ef435286df680c36b7cb580fc567b31251a0886c18881e2c298cc5dc1",
+      "fetched_at": "2026-10-31T13:19:33.502697+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/migration",
+      "title": "从 v7 迁移 | Vite 官方中文文档",
+      "file": "guide__migration-a24262.md",
+      "chars": 10876,
+      "sha256": "eddc83a1362f54b31dae41e93f1c56e583dd96355df0e244fc60ec99074e3c1e",
+      "fetched_at": "2026-10-31T13:19:34.067556+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/performance",
+      "title": "性能 | Vite 官方中文文档",
+      "file": "guide__performance-050ca3.md",
+      "chars": 3741,
+      "sha256": "248d12d30f1dde8fb6f5693ba2d8170b19e8adf92d868b178df3a7787812d8c2",
+      "fetched_at": "2026-10-31T13:19:34.494947+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/philosophy",
+      "title": "项目理念 | Vite 官方中文文档",
+      "file": "guide__philosophy-f206c6.md",
+      "chars": 1389,
+      "sha256": "86639b4973aea79d0efa7d8457bad8d54532dc9a5309e9470ab7a4a6e0207904",
+      "fetched_at": "2026-10-31T13:19:35.012216+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/rolldown",
+      "title": "Rolldown 集成 | Vite 官方中文文档",
+      "file": "guide__rolldown-c2079c.md",
+      "chars": 7760,
+      "sha256": "3279300b062565730e61d23af21415d23bddc3a0864f2e468245395eb665a535",
+      "fetched_at": "2026-10-31T13:19:35.536364+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/ssr",
+      "title": "服务端渲染（SSR） | Vite 官方中文文档",
+      "file": "guide__ssr-6df564.md",
+      "chars": 8191,
+      "sha256": "b0f0ff8596b0780d9ed9785a575dab819864211af668d6fff58998379d4dc3cd",
+      "fetched_at": "2026-10-31T13:19:36.162155+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/static-deploy",
+      "title": "部署静态站点 | Vite 官方中文文档",
+      "file": "guide__static-deploy-f01ab8.md",
+      "chars": 7708,
+      "sha256": "9f827699277d07cb3df02bca70216c23a824e04964866fd73b7011380fd48468",
+      "fetched_at": "2026-10-31T13:19:36.550602+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/troubleshooting",
+      "title": "排错指南 | Vite 官方中文文档",
+      "file": "guide__troubleshooting-be4b2c.md",
+      "chars": 7934,
+      "sha256": "828f53cf059c41fda35ddfa68e8f74165293067d2fba60426a4b42426011e552",
+      "fetched_at": "2026-10-31T13:19:37.050584+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/using-plugins",
+      "title": "使用插件 | Vite 官方中文文档",
+      "file": "guide__using-plugins-e4022d.md",
+      "chars": 1699,
+      "sha256": "9677177c9ef8b9e8be9da83820dcb642aab4f3408e1c19aeb96b8eab6bac4709",
+      "fetched_at": "2026-10-31T13:19:37.507818+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/guide/why",
+      "title": "为什么选 Vite | Vite 官方中文文档",
+      "file": "guide__why-9505bb.md",
+      "chars": 2286,
+      "sha256": "d691bb9fd6f923d7301cfd26ddd3afa33480f77158f92a9224354bcbac3541c9",
+      "fetched_at": "2026-10-31T13:19:38.055849+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/config/build-options",
+      "title": "构建选项 | Vite 官方中文文档",
+      "file": "config__build-options-589bed.md",
+      "chars": 9138,
+      "sha256": "80d539d87e189754ec7272a59f0cd6eeac0f67ce35c987897863ab15be9993ae",
+      "fetched_at": "2026-10-31T13:19:41.319239+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/config/dep-optimization-options",
+      "title": "依赖优化选项 | Vite 官方中文文档",
+      "file": "config__dep-optimization-options-303725.md",
+      "chars": 3100,
+      "sha256": "ec6170dc0d7f197f5a46c4768e65df135f7b0544bb91d53a325c83205536b227",
+      "fetched_at": "2026-10-31T13:19:41.820749+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/config/ssr-options",
+      "title": "SSR 选项 | Vite 官方中文文档",
+      "file": "config__ssr-options-224877.md",
+      "chars": 1887,
+      "sha256": "9a4c9c2359d154b1713bc4f3832c71672d39256e824d168b8eb801e9e7ae80b0",
+      "fetched_at": "2026-10-31T13:19:42.316816+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/config/preview-options",
+      "title": "预览选项 | Vite 官方中文文档",
+      "file": "config__preview-options-29140b.md",
+      "chars": 1594,
+      "sha256": "e6cc16ac586744c7dddf00fc5decec0e2c1bb59d1185a279468d8fb0412f9ea2",
+      "fetched_at": "2026-10-31T13:19:42.815287+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/config/shared-options",
+      "title": "共享选项 | Vite 官方中文文档",
+      "file": "config__shared-options-616694.md",
+      "chars": 12928,
+      "sha256": "33c11b87415a60b0920851d475a818cdd69388b3d2ab3b8c6a3855540552d72a",
+      "fetched_at": "2026-10-31T13:19:43.354189+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/config/server-options",
+      "title": "开发服务器选项 | Vite 官方中文文档",
+      "file": "config__server-options-c0c512.md",
+      "chars": 11685,
+      "sha256": "c805d93aa4459109a566762bee87980aaefcf3a30bdb7ef4d342691134e829d9",
+      "fetched_at": "2026-10-31T13:19:43.822913+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vite.dev/config/worker-options",
+      "title": "Worker 选项 | Vite 官方中文文档",
+      "file": "config__worker-options-d3e080.md",
+      "chars": 624,
+      "sha256": "c1d170ab2e5d37011a7f3f517a2fc7aedab62c1b36f7fb599b00a26ca4ff9963",
+      "fetched_at": "2026-10-31T13:19:44.317591+00:00",
+      "depth": 0
+    }
+  ],
+  "errors": []
+}
