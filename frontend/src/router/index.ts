@@ -34,6 +34,11 @@ const router = createRouter({
           component: () => import('@/views/KbListView.vue'),
         },
         {
+          path: 'corpus',
+          name: 'corpus',
+          component: () => import('@/views/CorpusView.vue'),
+        },
+        {
           path: 'kbs/:id',
           name: 'kb-detail',
           component: () => import('@/views/KbDetailView.vue'),

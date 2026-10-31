@@ -629,3 +629,38 @@ export interface UsageSummary {
   by_kb: { id: string; name: string; tokens: number }[]
   today: { used: number; budget: number; remaining: number | null; exceeded: boolean }
 }
+
+
+// --- Corpus packs -----------------------------------------------------------
+
+export interface CorpusPack {
+  slug: string
+  name: string
+  source: string
+  license: string
+  count: number
+  chars: number
+  generated_at: string | null
+}
+
+export interface CorpusDoc {
+  title: string
+  url: string
+  file: string
+  chars: number
+}
+
+export interface CorpusPackDetail extends CorpusPack {
+  documents: CorpusDoc[]
+  errors: { url: string; error: string }[]
+}
+
+export interface CorpusImportStatus {
+  total: number
+  done: number
+  added: number
+  skipped: number
+  failed: number
+  status: 'idle' | 'running' | 'completed' | 'failed'
+  error?: string | null
+}

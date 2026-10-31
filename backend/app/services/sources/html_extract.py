@@ -59,6 +59,17 @@ BLOCK_TAGS = {
 HEADING_TAGS = {f"h{level}": level for level in range(1, 7)}
 VOID_TAGS = {"br", "img", "hr", "meta", "link", "input", "source", "col"}
 
+# Class/id hints for chrome that is not wrapped in semantic tags (most sites ship
+# <div class="xxx-nav"> instead of <nav>). Matched case-insensitively against the
+# class and id attributes; the content wrapper itself never matches these.
+_NOISE_ATTR = re.compile(
+    r"nav|sidebar|menu|footer|sponsor|skip-link|visually-hidden|breadcrumb|"
+    r"outline|toc|catalog|advert|banner|cookie|share|comment|related|toolbar|"
+    r"spsr|aside|api-style|style-switch",
+    re.IGNORECASE,
+)
+_STRUCTURAL = {"article", "main", "body", "html"}
+
 _TRACKING_PARAMS = {
     "utm_source",
     "utm_medium",
@@ -99,6 +110,8 @@ class _MarkdownExtractor(HTMLParser):
         self._in_title = False
         self._link_href: str | None = None
         self._list_depth = 0
+        self._hidden_stack: list[str] = []
+        self._li_depth = 0
 
     # -- helpers -----------------------------------------------------------
     def _emit(self, text: str) -> None:
@@ -127,10 +140,24 @@ class _MarkdownExtractor(HTMLParser):
         if self._skip_depth:
             return
 
+        # Hidden nodes and chrome-by-class. ``hidden``/``aria-hidden`` is how many
+        # docs sites ship "copy for LLM" blocks that must never reach the index.
+        if "hidden" in attributes or attributes.get("aria-hidden") == "true":
+            self._skip_depth += 1
+            self._hidden_stack.append(tag)
+            return
+        if tag not in _STRUCTURAL:
+            marker = f"{attributes.get('class') or ''} {attributes.get('id') or ''}"
+            if marker.strip() and _NOISE_ATTR.search(marker):
+                self._skip_depth += 1
+                self._hidden_stack.append(tag)
+                return
+
         if tag in HEADING_TAGS:
             self._newline(2)
             self._emit("#" * HEADING_TAGS[tag] + " ")
         elif tag == "li":
+            self._li_depth += 1
             self._newline(1)
             self._emit("- ")
         elif tag == "blockquote":
@@ -149,7 +176,11 @@ class _MarkdownExtractor(HTMLParser):
         elif tag in {"td", "th"}:
             self._emit(" | ")
         elif tag in BLOCK_TAGS:
-            self._newline(2 if tag in {"p", "div", "section", "article", "table"} else 1)
+            opens_block = tag in {"p", "div", "section", "article", "table"}
+            # A block right after "- " is the item body: keep it on the same line
+            # so the Markdown stays a real list item.
+            if not (self._li_depth and self.parts and self.parts[-1].endswith("- ")):
+                self._newline(1 if (opens_block and self._li_depth) else (2 if opens_block else 1))
 
     def handle_endtag(self, tag: str) -> None:
         tag = tag.lower()
@@ -159,11 +190,19 @@ class _MarkdownExtractor(HTMLParser):
         if tag in SKIP_TAGS:
             self._skip_depth = max(0, self._skip_depth - 1)
             return
+        if self._hidden_stack and self._hidden_stack[-1] == tag:
+            self._hidden_stack.pop()
+            self._skip_depth = max(0, self._skip_depth - 1)
+            return
         if self._skip_depth:
             return
 
-        if tag in HEADING_TAGS or tag in {"p", "blockquote", "li"}:
-            self._newline(2)
+        if tag in HEADING_TAGS or tag in {"p", "blockquote"}:
+            # A paragraph inside a list item is the item body, not a new block.
+            self._newline(1 if self._li_depth else 2)
+        elif tag == "li":
+            self._li_depth = max(0, self._li_depth - 1)
+            self._newline(1)
         elif tag == "pre":
             self._pre_depth = max(0, self._pre_depth - 1)
             self._newline(1)
@@ -191,7 +230,10 @@ class _MarkdownExtractor(HTMLParser):
 
 
 def _clean(markdown: str) -> str:
-    text = markdown.replace("\r\n", "\n").replace("\r", "\n")
+    # Zero-width spaces are used as anchor placeholders; they break embeddings
+    # and make titles look duplicated in diffs.
+    text = markdown.replace("\u200b", "").replace("\ufeff", "")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = _TRAILING_SPACE.sub("\n", text)
     text = _MULTI_NEWLINE.sub("\n\n", text)
     lines = [line.rstrip() for line in text.split("\n")]

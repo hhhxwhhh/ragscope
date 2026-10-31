@@ -5,6 +5,7 @@ from app.api.v1 import (
     auth,
     chat,
     conversations,
+    corpus,
     dashboard,
     documents,
     eval,
@@ -44,3 +45,4 @@ api_router.include_router(graph.router)
 api_router.include_router(sources.router)
 api_router.include_router(usage.router)
 api_router.include_router(webhooks.router)
+api_router.include_router(corpus.router)

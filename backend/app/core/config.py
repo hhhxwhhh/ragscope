@@ -133,6 +133,8 @@ class Settings(BaseSettings):
     # Storage
     chroma_dir: str = str(BACKEND_DIR / "data" / "chroma")
     storage_dir: str = str(BACKEND_DIR / "data" / "storage")
+    # Offline corpus packs produced by scripts/crawl_corpus.py
+    corpus_dir: str = str(ROOT_DIR / "data" / "corpus")
     max_upload_bytes: int = 5 * 1024 * 1024
 
     @property

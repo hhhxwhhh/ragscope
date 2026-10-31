@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Collection, DataAnalysis, Key, Odometer, SwitchButton } from '@element-plus/icons-vue'
+import { Collection, DataAnalysis, Files, Key, Odometer, SwitchButton } from '@element-plus/icons-vue'
 
 import { useAuthStore } from '@/stores/auth'
 
@@ -45,6 +45,10 @@ async function handleLogout(): Promise<void> {
         <el-menu-item index="/kbs">
           <el-icon><Collection /></el-icon>
           <span>知识库</span>
+        </el-menu-item>
+        <el-menu-item index="/corpus">
+          <el-icon><Files /></el-icon>
+          <span>语料库</span>
         </el-menu-item>
         <el-menu-item index="/ops">
           <el-icon><Odometer /></el-icon>

@@ -136,3 +136,32 @@ def test_source_create_validates_connector_config():
 def test_source_create_rejects_unknown_type():
     with pytest.raises(ValidationError):
         SourceCreate(name="x", source_type="ftp", config={})
+
+
+def test_extract_drops_hidden_and_chrome_by_class():
+    html = """
+    <body>
+      <a class="VPSkipLink visually-hidden">直接跳到内容</a>
+      <div class="VPLocalNavOutlineDropdown">本页目录</div>
+      <div hidden="true">Are you an LLM? internal note</div>
+      <div class="spsr-container special aside">成为赞助商</div>
+      <main><div class="vt-doc"><h1>正文标题</h1><p>唯一应该保留的段落。</p></div></main>
+    </body>
+    """
+    page = extract(html, "https://e.com/x")
+    assert "直接跳到内容" not in page.markdown
+    assert "本页目录" not in page.markdown
+    assert "internal note" not in page.markdown
+    assert "成为赞助商" not in page.markdown
+    assert "唯一应该保留的段落" in page.markdown
+
+
+def test_extract_keeps_list_items_on_one_line_and_strips_zero_width():
+    html = (
+        "<article><ul><li><p>第一项</p></li><li><p>第二项</p></li></ul>"
+        "<h2>标题\u200b</h2></article>"
+    )
+    page = extract(html, "https://e.com/x")
+    assert "- 第一项" in page.markdown
+    assert "- 第二项" in page.markdown
+    assert "\u200b" not in page.markdown

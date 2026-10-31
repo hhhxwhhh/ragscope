@@ -1,0 +1,498 @@
+{
+  "name": "Vue 3 官方文档（中文）",
+  "slug": "vue3-zh",
+  "source": "https://cn.vuejs.org/sitemap.xml",
+  "license": "MIT · Vue.js 官方文档，来源 https://cn.vuejs.org/",
+  "generated_at": "2026-10-31T12:28:31.638085+00:00",
+  "count": 54,
+  "chars": 314643,
+  "documents": [
+    {
+      "url": "https://cn.vuejs.org/guide/best-practices/accessibility",
+      "title": "无障碍访问 | Vue.js",
+      "file": "guide__best-practices__accessibility-2b4fad.md",
+      "chars": 10438,
+      "sha256": "f0213d6ffc371e7d69e96fa90de5415dafce0b2c3c1be68c5dc90b7ea5dac9ce",
+      "fetched_at": "2026-10-31T12:28:00.099737+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/best-practices/production-deployment",
+      "title": "生产部署 | Vue.js",
+      "file": "guide__best-practices__production-deployment-2173d0.md",
+      "chars": 1025,
+      "sha256": "121854995a872107ed87673699c7175a6bca710e9013d197d7956c33c88d9f09",
+      "fetched_at": "2026-10-31T12:28:00.678163+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/built-ins/suspense",
+      "title": "Suspense | Vue.js",
+      "file": "guide__built-ins__suspense-eefbd2.md",
+      "chars": 4058,
+      "sha256": "25e1b0f9dacd9185355350fabc4744a3397835e0a0f01f52a9623c3989b3e919",
+      "fetched_at": "2026-10-31T12:28:01.127268+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/best-practices/performance",
+      "title": "性能优化 | Vue.js",
+      "file": "guide__best-practices__performance-35d8d2.md",
+      "chars": 5611,
+      "sha256": "411fad42f76cc2661f9f4024e3fb0fb81fb0a3db8d572f9ae9437d39e20eabb4",
+      "fetched_at": "2026-10-31T12:28:01.721790+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/built-ins/keep-alive",
+      "title": "KeepAlive | Vue.js",
+      "file": "guide__built-ins__keep-alive-57f3a7.md",
+      "chars": 2422,
+      "sha256": "3faa2d284d13c16fdae2ff06725439a053e63c49f5d818fe64ee8faecdb10df2",
+      "fetched_at": "2026-10-31T12:28:02.394053+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/best-practices/security",
+      "title": "安全 | Vue.js",
+      "file": "guide__best-practices__security-a4440b.md",
+      "chars": 4251,
+      "sha256": "613f124d1c8dda22ef48adae9baaad551b1f71f2ab6c5984c92e2a88c51f3c2c",
+      "fetched_at": "2026-10-31T12:28:02.860750+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/built-ins/teleport",
+      "title": "Teleport | Vue.js",
+      "file": "guide__built-ins__teleport-71b9c9.md",
+      "chars": 3680,
+      "sha256": "4565ae5a600001be0c0c6f85dbb4f50be0f4912ddacc490a13d5193a94f3d775",
+      "fetched_at": "2026-10-31T12:28:03.491420+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/built-ins/transition-group",
+      "title": "TransitionGroup | Vue.js",
+      "file": "guide__built-ins__transition-group-53411a.md",
+      "chars": 2187,
+      "sha256": "162e176f8b7a525c210d06931ff7fcc106d1407e55ffa544592decf7db24d000",
+      "fetched_at": "2026-10-31T12:28:04.088970+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/built-ins/transition",
+      "title": "Transition | Vue.js",
+      "file": "guide__built-ins__transition-7ed04a.md",
+      "chars": 10661,
+      "sha256": "8c4fbe5804c4c8f4c82c420dfef5c8db19e3f4c864c8b0b6159c61104dad5248",
+      "fetched_at": "2026-10-31T12:28:04.772860+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/components/async",
+      "title": "异步组件 | Vue.js",
+      "file": "guide__components__async-4da926.md",
+      "chars": 4093,
+      "sha256": "4b6ca79d76688a548e33c74ea64320ecb47fc30f14f82f29b79212b36f4a8ef8",
+      "fetched_at": "2026-10-31T12:28:05.254241+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/components/attrs",
+      "title": "透传 Attributes | Vue.js",
+      "file": "guide__components__attrs-294ee7.md",
+      "chars": 3905,
+      "sha256": "d0e5d864449cb46ede49cc65f64a3e52666e3a8dca87fb153e1991152fd53e2c",
+      "fetched_at": "2026-10-31T12:28:06.144439+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/components/events",
+      "title": "组件事件 | Vue.js",
+      "file": "guide__components__events-190d99.md",
+      "chars": 4166,
+      "sha256": "db34b2010dfaba1c4cfa8f898fbee606cb6011efc7ceca9d7465f7d35f85b2fa",
+      "fetched_at": "2026-10-31T12:28:06.552355+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/components/props",
+      "title": "Props | Vue.js",
+      "file": "guide__components__props-43df7b.md",
+      "chars": 11990,
+      "sha256": "8d8ed96e6c905d796fba5b29bda811b91257164f6883b8ce4008470350b9e511",
+      "fetched_at": "2026-10-31T12:28:07.133675+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/components/provide-inject",
+      "title": "依赖注入 | Vue.js",
+      "file": "guide__components__provide-inject-7c653f.md",
+      "chars": 5947,
+      "sha256": "2a950cc446745e50a615414bc5488636c7db71a19480192fbbb5c4882dfdff22",
+      "fetched_at": "2026-10-31T12:28:07.719427+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/components/registration",
+      "title": "组件注册 | Vue.js",
+      "file": "guide__components__registration-087cc1.md",
+      "chars": 2453,
+      "sha256": "90c7aa69dc1c75f40d3a70d12a7310633e5615c91f0ac1e1f6fa3cfb3d18c93a",
+      "fetched_at": "2026-10-31T12:28:08.285133+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/components/slots",
+      "title": "插槽 Slots | Vue.js",
+      "file": "guide__components__slots-931af6.md",
+      "chars": 8892,
+      "sha256": "7b3c46f2bf1663a84cc843313478b8c6bec6cfe667d623efd2bca1437b5035d0",
+      "fetched_at": "2026-10-31T12:28:08.937601+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/components/v-model",
+      "title": "组件 v-model | Vue.js",
+      "file": "guide__components__v-model-808a99.md",
+      "chars": 10170,
+      "sha256": "7a4457b10356a3559d248b1ee36826ff4080bcdaaf62d4b74ad4214dfe1fefa8",
+      "fetched_at": "2026-10-31T12:28:09.690386+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/essentials/application",
+      "title": "创建一个 Vue 应用 | Vue.js",
+      "file": "guide__essentials__application-2702b8.md",
+      "chars": 2125,
+      "sha256": "e9cccfe83585581723c5fea6e1891595c8295164f4c986e69e75ab348df24a1f",
+      "fetched_at": "2026-10-31T12:28:10.049416+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/essentials/class-and-style",
+      "title": "Class 与 Style 绑定 | Vue.js",
+      "file": "guide__essentials__class-and-style-9de299.md",
+      "chars": 4935,
+      "sha256": "47a814bd4ed7c2217efce0fa7dc2bbe886b52f25e3844fcc7963ecef3b453add",
+      "fetched_at": "2026-10-31T12:28:10.678534+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/essentials/component-basics",
+      "title": "组件基础 | Vue.js",
+      "file": "guide__essentials__component-basics-db69f2.md",
+      "chars": 9758,
+      "sha256": "4f9741699ecd2b4e03322fce96d1e6b716d3e6d8a85ac7eb2c4c000a2c745fab",
+      "fetched_at": "2026-10-31T12:28:11.434944+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/essentials/computed",
+      "title": "计算属性 | Vue.js",
+      "file": "guide__essentials__computed-e7641a.md",
+      "chars": 6049,
+      "sha256": "5cca2ed7ef53dbce40cf1ae47b271df9bfa65d3883061db6e461f8a6928386f2",
+      "fetched_at": "2026-10-31T12:28:11.878408+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/essentials/conditional",
+      "title": "条件渲染 | Vue.js",
+      "file": "guide__essentials__conditional-05c90d.md",
+      "chars": 1808,
+      "sha256": "e6b0cf89f7819c7530913b6108490d350dec6c62abc324ad6355721840f622e0",
+      "fetched_at": "2026-10-31T12:28:12.476797+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/essentials/event-handling",
+      "title": "事件处理 | Vue.js",
+      "file": "guide__essentials__event-handling-af35e3.md",
+      "chars": 5379,
+      "sha256": "25412a714edc518d9ba05fe7796d91526a9ed3eed8238709b583cab9bf2eb2b8",
+      "fetched_at": "2026-10-31T12:28:13.064213+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/essentials/forms",
+      "title": "表单输入绑定 | Vue.js",
+      "file": "guide__essentials__forms-afa88f.md",
+      "chars": 5925,
+      "sha256": "a8039dc4af325343898ea5be65079a6c97135e03d61ae03e7c3efc4f997373fe",
+      "fetched_at": "2026-10-31T12:28:13.681950+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/essentials/lifecycle",
+      "title": "生命周期钩子 | Vue.js",
+      "file": "guide__essentials__lifecycle-192c85.md",
+      "chars": 1158,
+      "sha256": "34309e27e52bbc8f507a70cb96549d48f19a5d9337caf68b074ed594758371b7",
+      "fetched_at": "2026-10-31T12:28:14.226462+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/essentials/list",
+      "title": "列表渲染 | Vue.js",
+      "file": "guide__essentials__list-2d163e.md",
+      "chars": 6614,
+      "sha256": "aa0370a71e4c35c64522a3bda1a20986101272c3f6958134bc3c9aaf7850e29c",
+      "fetched_at": "2026-10-31T12:28:14.880021+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/essentials/reactivity-fundamentals",
+      "title": "响应式基础 | Vue.js",
+      "file": "guide__essentials__reactivity-fundamentals-9f063f.md",
+      "chars": 9698,
+      "sha256": "d5a20133954205d892e84442a0da9c92ecb4d5ff9b855b18f8617d3dd9c2000e",
+      "fetched_at": "2026-10-31T12:28:15.481925+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/essentials/template-refs",
+      "title": "模板引用 | Vue.js",
+      "file": "guide__essentials__template-refs-0c75de.md",
+      "chars": 4993,
+      "sha256": "082afeba355043737caae5dea16d3cbcf6c76d0320338f7bdc8c1fe0d7165c86",
+      "fetched_at": "2026-10-31T12:28:16.144451+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/essentials/template-syntax",
+      "title": "模板语法 | Vue.js",
+      "file": "guide__essentials__template-syntax-cf6ea7.md",
+      "chars": 5920,
+      "sha256": "c474e7da9594329c66c4a119561e413234b462d73ddaa4d5555b28755f05df33",
+      "fetched_at": "2026-10-31T12:28:16.644950+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/essentials/watchers",
+      "title": "侦听器 | Vue.js",
+      "file": "guide__essentials__watchers-694023.md",
+      "chars": 10090,
+      "sha256": "8f38a46df5becbbc118fa075efc81332d0721e452a34fca9d772c8968d766aa0",
+      "fetched_at": "2026-10-31T12:28:17.275570+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/extras/animation",
+      "title": "动画技巧 | Vue.js",
+      "file": "guide__extras__animation-4f80f4.md",
+      "chars": 2877,
+      "sha256": "0a43f730d844cfbed12dd87586d9675905eb98f588aad5c72a1da9e39d9ee1b4",
+      "fetched_at": "2026-10-31T12:28:17.873445+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/extras/composition-api-faq",
+      "title": "组合式 API 常见问答 | Vue.js",
+      "file": "guide__extras__composition-api-faq-853753.md",
+      "chars": 5127,
+      "sha256": "4c296c085f8f79d0c7f21c159fe73b1353150ff1e420b9aec7c2d362b7a55d51",
+      "fetched_at": "2026-10-31T12:28:18.432007+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/extras/reactivity-in-depth",
+      "title": "深入响应式系统 | Vue.js",
+      "file": "guide__extras__reactivity-in-depth-78140c.md",
+      "chars": 10609,
+      "sha256": "300acd0e9dfbad542063bea627959e925376600730de36502e6cad74da91b6fd",
+      "fetched_at": "2026-10-31T12:28:19.159796+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/extras/reactivity-transform",
+      "title": "响应性语法糖 | Vue.js",
+      "file": "guide__extras__reactivity-transform-f6836b.md",
+      "chars": 5811,
+      "sha256": "e848a48f80a3dab8695e160c1295f57cad619f4afb7a74cf41e1631745a1b7c7",
+      "fetched_at": "2026-10-31T12:28:19.744586+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/extras/render-function",
+      "title": "渲染函数 & JSX | Vue.js",
+      "file": "guide__extras__render-function-2f2ba4.md",
+      "chars": 13894,
+      "sha256": "cc5f30766b5341b2b8f2d7a6307483e9338917116afa37ce36a9829106a12f17",
+      "fetched_at": "2026-10-31T12:28:20.288108+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/extras/rendering-mechanism",
+      "title": "渲染机制 | Vue.js",
+      "file": "guide__extras__rendering-mechanism-4bfaf5.md",
+      "chars": 4463,
+      "sha256": "7549ce71d198092391b08fb1a53427a569f8e669042a62f35d58fb1f907e523e",
+      "fetched_at": "2026-10-31T12:28:20.896596+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/extras/ways-of-using-vue",
+      "title": "使用 Vue 的多种方式 | Vue.js",
+      "file": "guide__extras__ways-of-using-vue-1a23b4.md",
+      "chars": 2159,
+      "sha256": "5da29244a27404780a7c5db4212b36f819c2fe202e74e8b258c3f4182b0e7cbc",
+      "fetched_at": "2026-10-31T12:28:21.434010+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/extras/web-components",
+      "title": "Vue 与 Web Components | Vue.js",
+      "file": "guide__extras__web-components-13baed.md",
+      "chars": 12473,
+      "sha256": "ce6fda0b196d6216aa675d176788f644eb7b1c8c76f03af795a739ac9dfb712c",
+      "fetched_at": "2026-10-31T12:28:22.058158+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/introduction",
+      "title": "简介 | Vue.js",
+      "file": "guide__introduction-813669.md",
+      "chars": 4767,
+      "sha256": "c2540e78d2f0aae00b26e1e27e81a7f1503f1ba83edc240b8b3106f53b48b100",
+      "fetched_at": "2026-10-31T12:28:22.696734+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/quick-start",
+      "title": "快速上手 | Vue.js",
+      "file": "guide__quick-start-d31d14.md",
+      "chars": 6776,
+      "sha256": "68a871f07fe5d405ad1828b7d3cd0d25b4ee3fd892aed7d69942f595d8ac07ae",
+      "fetched_at": "2026-10-31T12:28:23.274483+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/reusability/composables",
+      "title": "组合式函数 | Vue.js",
+      "file": "guide__reusability__composables-b25348.md",
+      "chars": 8799,
+      "sha256": "1f066513168bdf52b409e495c705729225ac683750e59f9e9d19b2ee9e853131",
+      "fetched_at": "2026-10-31T12:28:23.887511+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/reusability/custom-directives",
+      "title": "自定义指令 | Vue.js",
+      "file": "guide__reusability__custom-directives-a47c5b.md",
+      "chars": 4402,
+      "sha256": "11aadd336c819483e5e3d98e2733de4fe3850503c84abfdba8b20a40c0806be4",
+      "fetched_at": "2026-10-31T12:28:24.465328+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/reusability/plugins",
+      "title": "插件 | Vue.js",
+      "file": "guide__reusability__plugins-343df4.md",
+      "chars": 2386,
+      "sha256": "0f310b41ddee63d3b0b42777203900162ebfa4f7993ec523bc3dfafb8eb01ffb",
+      "fetched_at": "2026-10-31T12:28:25.058280+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/scaling-up/routing",
+      "title": "路由 | Vue.js",
+      "file": "guide__scaling-up__routing-d36854.md",
+      "chars": 1943,
+      "sha256": "edb77a244d0dd33da0f77f3c74b3c460d19c6597d1f4b8aa42d733ff10d34956",
+      "fetched_at": "2026-10-31T12:28:25.671148+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/scaling-up/sfc",
+      "title": "单文件组件 | Vue.js",
+      "file": "guide__scaling-up__sfc-994154.md",
+      "chars": 2273,
+      "sha256": "00eb2986f396c4dbe100a1f94c4b40fe76120d5c30bd1290623a81269439c82d",
+      "fetched_at": "2026-10-31T12:28:26.272405+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/scaling-up/ssr",
+      "title": "服务端渲染 (SSR) | Vue.js",
+      "file": "guide__scaling-up__ssr-674338.md",
+      "chars": 9116,
+      "sha256": "4763fe4e03414981cf3ecfbe1b2c9c908912e0d79dec1f9514ac83aad52e0771",
+      "fetched_at": "2026-10-31T12:28:26.872595+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/scaling-up/state-management",
+      "title": "状态管理 | Vue.js",
+      "file": "guide__scaling-up__state-management-c62680.md",
+      "chars": 3658,
+      "sha256": "2df07cb5de415cab97d75504b7148662f994429c5056d3a74a3c12e90faa6657",
+      "fetched_at": "2026-10-31T12:28:27.469768+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/scaling-up/testing",
+      "title": "测试 | Vue.js",
+      "file": "guide__scaling-up__testing-15d036.md",
+      "chars": 9688,
+      "sha256": "3954429de014562cb704ea7f36d360f15446b17ffa9bd7b2425fa11f5f37f8f6",
+      "fetched_at": "2026-10-31T12:28:28.148331+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/scaling-up/tooling",
+      "title": "工具链 | Vue.js",
+      "file": "guide__scaling-up__tooling-0c7c80.md",
+      "chars": 3991,
+      "sha256": "4f6d4f1fab771eef4390e4f27b54081e0f87b358697787fb3393417dca5d1598",
+      "fetched_at": "2026-10-31T12:28:28.636408+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/typescript/composition-api",
+      "title": "TypeScript 与组合式 API | Vue.js",
+      "file": "guide__typescript__composition-api-3b423e.md",
+      "chars": 10141,
+      "sha256": "d85f2f6337798addbe737a26351c95535a04ab24ddf12971ae41406e224ca546",
+      "fetched_at": "2026-10-31T12:28:29.391340+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/typescript/options-api",
+      "title": "TypeScript 与选项式 API | Vue.js",
+      "file": "guide__typescript__options-api-f1298b.md",
+      "chars": 5779,
+      "sha256": "26f5aa30f9b6e6a70079e093cb70dee0f007bb180439a5c8cf68286be474e7fc",
+      "fetched_at": "2026-10-31T12:28:29.861807+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/guide/typescript/overview",
+      "title": "搭配 TypeScript 使用 Vue | Vue.js",
+      "file": "guide__typescript__overview-2718b9.md",
+      "chars": 4838,
+      "sha256": "82ee6084dcf0ca1516ef52957d5d1e86240ae4f7f9444ca3d14643540f6f151a",
+      "fetched_at": "2026-10-31T12:28:30.507906+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/style-guide/PLEADE_DO_NOT_TRANSLATE",
+      "title": "Please DO NOT Translate | Vue.js",
+      "file": "style-guide__PLEADE_DO_NOT_TRANSLATE-bd1eee.md",
+      "chars": 386,
+      "sha256": "9b86afbabe958bd6fc30bc5e59ec9e3655c5e6ae4026044c899dc020dac8db05",
+      "fetched_at": "2026-10-31T12:28:31.042836+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://cn.vuejs.org/style-guide/rules-essential",
+      "title": "Priority A Rules: Essential | Vue.js",
+      "file": "style-guide__rules-essential-8a1cd6.md",
+      "chars": 7886,
+      "sha256": "a0526451d81e00f51b8f769a77afd201d175e8a2c79257c3abee0cfc7beb6256",
+      "fetched_at": "2026-10-31T12:28:31.637071+00:00",
+      "depth": 0
+    }
+  ],
+  "errors": []
+}

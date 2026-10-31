@@ -54,6 +54,7 @@ v0.5 新增的企业级子系统（指标/追踪、API Key、MCP、多智能体�
 - 语义缓存：对首轮问题做 embedding 相似度匹配（默认阈值 0.93），命中后复用「证据集 + 答案」，引用编号仍然正确；按 index_version 与 prompt_variant 失效，每 KB 上限 200 条 LRU 淘汰
 - 用量与预算：按天 / 按知识库聚合 `messages.token_usage`，`DAILY_TOKEN_BUDGET` 超限时流式接口 429、JSON 接口降级为拒答；运维页展示今日预算与近 14 天 token 柱状图
 - Webhook：订阅 `sync.completed` / `sync.failed` / `eval.completed` / `ingest.failed`，HMAC-SHA256 签名、3 次指数退避重试、投递结果可回查，支持测试投递
+- 语料库：`scripts/crawl_corpus.py` 把文档站抓成本地 Markdown 快照（断点续爬、robots、限速、`index.json` 清单 + 许可声明），前端「语料库」页可逐篇审阅、一键导入任意知识库；仓库自带 Vue 3 中文文档 54 篇 / 31.4 万字符真实语料
 
 ## 一次检索的链路
 
@@ -210,6 +211,7 @@ rag_learn/
 │   │   ├── seed_eval.py     # 只重建评测数据集
 │   │   ├── ocr_pdf.py       # 扫描件 PDF -> 文本（离线预处理）
 │   │   ├── build_graph.py   # 构建/清空 GraphRAG 实体图谱
+│   │   ├── crawl_corpus.py  # 批量抓取文档站，生成可复用的语料包
 │   │   └── reindex_vectors.py
 │   ├── tests/{unit,integration}/
 │   └── Dockerfile
@@ -219,7 +221,9 @@ rag_learn/
 │   ├── views/               # Dashboard, KbDetail, Chat, Graph, Ops, ApiKeys,
 │   │                        # EvalRun, EvalCompare
 │   └── types/
-├── data/                    # 5 篇虚构的星河科技产品文档
+├── data/
+│   ├── corpus/vue3-zh/      # 真实语料包：Vue 3 中文文档 54 篇（含 index 与许可声明）
+│   └── …                    # 5 篇虚构的星河科技产品文档
 ├── docs/                    # 应用场景、架构、评测设计、MCP、平台层、
 │                            # 数据源同步、语义缓存、面试手册
 ├── notebooks/learning/      # 最开始的手写 RAG notebook
@@ -304,6 +308,22 @@ docker compose -f docker-compose.prod.yml exec api python scripts/seed_demo.py
 ## 企业级能力怎么跑起来
 
 这一层不是概念演示，每条命令都能在本机复现。设计说明见 **[docs/platform.md](docs/platform.md)**。
+
+### 爬取真实语料并导入
+
+```bash
+cd backend
+# 抓取 Vue 3 中文文档（sitemap 发现，50 篇上限，0.6s 间隔）
+PYTHONPATH=. .venv/Scripts/python.exe scripts/crawl_corpus.py \
+  --name "Vue 3 官方文档（中文）" --slug vue3-zh \
+  --sitemap https://cn.vuejs.org/sitemap.xml --include guide/ \
+  --max-pages 50 --out ../data/corpus/vue3-zh \
+  --license "MIT · Vue.js 官方文档，来源 https://cn.vuejs.org/"
+```
+
+然后在左侧「语料库」页选择语料包 → 导入知识库（已存在同来源 URL 的文档自动跳过）。
+仓库里已经带了这次抓取的结果：`data/corpus/vue3-zh/`（54 篇，约 31.4 万字符）。
+设计与合规说明见 **[docs/corpus.md](docs/corpus.md)**。
 
 ### 接入外部数据源（定期补充真实内容）
 
