@@ -50,6 +50,8 @@ v0.5 新增的企业级子系统（指标/追踪、API Key、MCP、多智能体�
 - MCP Server：手写 JSON-RPC 2.0 协议层，stdio 与 HTTP 两种传输共用同一个 dispatcher，把知识库暴露为 `list_knowledge_bases` / `search_knowledge_base` / `ask_knowledge_base` / `get_document_outline` 四个只读工具
 - 可观测性：自研 Prometheus 指标层（HTTP、检索分阶段、缓存命中、拒答、token、Agent 步数、入库、图谱），`/metrics` 抓取端点 + `/api/v1/ops/summary` 运维快照；OpenTelemetry 可选接入 OTLP，响应头返回 `X-Trace-ID`；日志可切 JSON 并自动注入 `request_id` / `trace_id`
 - 异步任务：`TASK_BACKEND=inline|celery` 一键切换，Celery worker 接管入库与评测运行，broker 不可用时自动降级为进程内执行；`/ops/summary` 暴露队列积压
+- 数据源与定期同步：web（有界 BFS）/ sitemap / RSS / GitHub 四种连接器，抓取 → HTML→Markdown → 去重 → 增量入库；按 URL 认身份、按正文 sha256 判版本，内容没变完全不触发 embedding；robots.txt、请求间隔、页数/深度上限可配；inline 与 Celery 两种调度后端，run 记录 added/updated/unchanged/failed
+- 语义缓存：对首轮问题做 embedding 相似度匹配（默认阈值 0.93），命中后复用「证据集 + 答案」，引用编号仍然正确；按 index_version 与 prompt_variant 失效，每 KB 上限 200 条 LRU 淘汰
 
 ## 一次检索的链路
 
@@ -298,6 +300,22 @@ docker compose -f docker-compose.prod.yml exec api python scripts/seed_demo.py
 
 这一层不是概念演示，每条命令都能在本机复现。设计说明见 **[docs/platform.md](docs/platform.md)**。
 
+### 接入外部数据源（定期补充真实内容）
+
+```bash
+# 建一个 3 页、1 跳、1.2 秒间隔的网页数据源，并立即同步一次
+cd backend
+PYTHONPATH=. .venv/Scripts/python.exe scripts/seed_sources.py \
+  --kb "星河科技" --type web --url https://fastapi.tiangolo.com/tutorial/ --sync
+
+# GitHub 文档源（私有仓库需要 GITHUB_TOKEN）
+PYTHONPATH=. .venv/Scripts/python.exe scripts/seed_sources.py \
+  --kb "星河科技" --type github --repo tiangolo/fastapi --path docs/en/docs/tutorial --limit 5
+```
+
+也可以在知识库详情页「数据源」标签里配置、预检、手动同步或设置每 N 分钟自动同步。
+设计说明（增量策略、调度、抓取合规）见 **[docs/sources.md](docs/sources.md)**。
+
 ### API Key 与机器接入
 
 ```bash
@@ -363,7 +381,7 @@ TASK_BACKEND=celery celery -A app.workers.celery_app:celery_app worker -Q ragsco
 | 入口 | 内容 |
 |---|---|
 | `GET /metrics` | Prometheus 抓取端点（可设 `METRICS_TOKEN` 保护） |
-| `GET /api/v1/ops/summary` | 请求量 / 错误率 / P50 P95 P99 / 拒答率 / token / 队列积压 |
+| `GET /api/v1/ops/summary` | 请求量 / 错误率 / P50 P95 P99 / 拒答率 / token / 队列积压 / 语义缓存命中 |
 | 响应头 `X-Trace-ID` | 开启 OTel 后可贴进 Jaeger 查完整链路 |
 | `docker compose -f docker-compose.prod.yml up` | 自带 Prometheus(:9090) 与 Jaeger(:16686) |
 

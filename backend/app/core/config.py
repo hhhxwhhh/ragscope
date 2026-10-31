@@ -81,6 +81,11 @@ class Settings(BaseSettings):
     multi_query_timeout_seconds: float = 8.0
     retrieval_cache_enabled: bool = True
     retrieval_cache_ttl_seconds: int = 300
+    # Semantic answer cache (embedding similarity over recent questions)
+    semantic_cache_enabled: bool = True
+    semantic_cache_threshold: float = 0.93
+    semantic_cache_max_entries: int = 200
+
     # GraphRAG: one-hop expansion on top of the fused candidates. It is a no-op
     # until a knowledge base has had its graph built.
     graph_rag_enabled: bool = True

@@ -909,6 +909,13 @@ onMounted(async () => {
                   </el-tag>
                 </span>
               </div>
+              <div v-if="message.trace.semantic_cache_hit" class="trace-row">
+                <span class="trace-label">语义缓存</span>
+                <span class="ok-text">
+                  命中了相近问题的历史回答（相似度
+                  {{ (message.trace.semantic_cache_score ?? 0).toFixed(3) }}），本次未调用模型
+                </span>
+              </div>
               <div class="trace-row">
                 <span class="trace-label">重排</span>
                 <span :class="message.trace.reranked ? 'ok-text' : 'muted'">

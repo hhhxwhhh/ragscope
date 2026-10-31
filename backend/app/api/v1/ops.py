@@ -28,6 +28,7 @@ class OpsSnapshot(BaseModel):
     agent: dict[str, int]
     ingest: dict[str, int]
     graphrag: dict[str, int]
+    semantic_cache: dict[str, int]
     eval: dict[str, int]
     tasks: dict[str, Any]
 

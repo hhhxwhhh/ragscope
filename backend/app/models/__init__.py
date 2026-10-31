@@ -16,6 +16,7 @@ from app.models.knowledge_base import KnowledgeBase
 from app.models.message import Message, MessageRole, MessageStatus
 from app.models.retrieval_trace import RetrievalTrace
 from app.models.review import AnswerReview, ReviewVerdict
+from app.models.semantic_cache import SemanticCacheEntry
 from app.models.source import DataSource, SyncRun
 from app.models.user import User
 
@@ -46,5 +47,6 @@ __all__ = [
     "RetrievalTrace",
     "SyncRun",
     "ReviewVerdict",
+    "SemanticCacheEntry",
     "User",
 ]

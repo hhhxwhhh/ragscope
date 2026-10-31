@@ -41,6 +41,8 @@ os.environ.update(
         "QUERY_REWRITE_ENABLED": "false",
         "MULTI_QUERY_ENABLED": "false",
         "RETRIEVAL_CACHE_ENABLED": "false",
+        # Avoids loading the embedding model in the cache write path.
+        "SEMANTIC_CACHE_ENABLED": "false",
     }
 )
 
@@ -52,6 +54,7 @@ from app.main import app  # noqa: E402
 settings = get_settings()
 
 TABLES = (
+    "semantic_cache_entries",
     "sync_runs",
     "data_sources",
     "chunk_entities",

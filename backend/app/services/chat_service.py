@@ -21,6 +21,7 @@ from app.models.feedback import MessageFeedback
 from app.models.knowledge_base import KnowledgeBase
 from app.models.message import Message, MessageRole, MessageStatus
 from app.models.retrieval_trace import RetrievalTrace
+from app.rag import semantic_cache
 from app.rag.answer import complete_answer
 from app.rag.llm import get_chat_model
 from app.rag.pipeline import RetrievalOutcome, retrieve
@@ -371,6 +372,64 @@ def _as_uuid(value: Any) -> UUID | None:
         return None
 
 
+async def _semantic_lookup(
+    db: AsyncSession,
+    kb: KnowledgeBase,
+    question: str,
+    prompt_variant: str,
+    history: list[tuple[str, str]],
+) -> tuple[RetrievalOutcome, str, dict[str, Any] | None] | None:
+    """Semantic cache lookup, only for the first turn of a conversation.
+
+    Multi-turn questions are context-dependent ("那它呢？"), so two identical
+    strings can need different answers. Restricting the cache to turn one keeps
+    the hit rate meaningful without inventing a context-keyed lookup.
+    """
+    if history or not get_settings().semantic_cache_enabled:
+        return None
+    try:
+        hit = await semantic_cache.lookup(db, kb, question, prompt_variant=prompt_variant)
+    except Exception:
+        logger.warning("semantic cache lookup failed", exc_info=True)
+        return None
+    if hit is None:
+        return None
+    outcome = RetrievalOutcome(
+        query=question,
+        rewritten_query=hit.question,
+        candidates=hit.candidates,
+        trace=hit.trace,
+    )
+    return outcome, hit.answer, hit.usage
+
+
+async def _semantic_store(
+    db: AsyncSession,
+    kb: KnowledgeBase,
+    question: str,
+    answer: str,
+    outcome: RetrievalOutcome,
+    prompt_variant: str,
+    usage: dict[str, Any] | None,
+) -> None:
+    """Best-effort cache write. Never lets caching break an answer."""
+    if not answer or outcome.trace.get("semantic_cache_hit") or REFUSAL_MESSAGE in answer:
+        return
+    try:
+        async with db.begin_nested():
+            await semantic_cache.store(
+                db,
+                kb,
+                question,
+                answer,
+                outcome,
+                prompt_variant=prompt_variant,
+                usage=usage,
+            )
+    except Exception:
+        logger.warning("semantic cache store failed", exc_info=True)
+
+
 async def _save_assistant_message(
     db: AsyncSession,
     conversation: Conversation,
@@ -486,7 +545,10 @@ async def answer_once(
 
     outcome = await retrieve(db, kb, question, history=history)
     usage: dict[str, Any] | None = None
-    if outcome.candidates:
+    cached = await _semantic_lookup(db, kb, question, prompt_variant, history)
+    if cached is not None:
+        outcome, answer, usage = cached
+    elif outcome.candidates:
         answer, usage = await complete_answer(
             question,
             outcome.candidates,
@@ -495,6 +557,7 @@ async def answer_once(
             prompt_variant=prompt_variant,
         )
         answer = answer or REFUSAL_MESSAGE
+        await _semantic_store(db, kb, question, answer, outcome, prompt_variant, usage)
     else:
         answer = REFUSAL_MESSAGE
 
@@ -521,6 +584,10 @@ class StreamPreparation:
     outcome: RetrievalOutcome
     history: list[tuple[str, str]]
     prompt_variant: str = DEFAULT_PROMPT_VARIANT
+    # Set when a semantically equivalent question was answered before; the SSE
+    # layer then replays this answer instead of calling the model.
+    cached_answer: str | None = None
+    cached_usage: dict[str, Any] | None = None
 
 
 async def prepare_stream(
@@ -555,6 +622,11 @@ async def prepare_stream(
         await db.flush()
 
         outcome = await retrieve(db, kb, question, history=history)
+        cached = await _semantic_lookup(db, kb, question, prompt_variant, history)
+        cached_answer: str | None = None
+        cached_usage: dict[str, Any] | None = None
+        if cached is not None:
+            outcome, cached_answer, cached_usage = cached
         conversation.last_message_at = datetime.now(UTC)
         await db.commit()
         return StreamPreparation(
@@ -563,6 +635,8 @@ async def prepare_stream(
             outcome=outcome,
             history=history,
             prompt_variant=prompt_variant,
+            cached_answer=cached_answer,
+            cached_usage=cached_usage,
         )
 
 
@@ -593,6 +667,10 @@ async def save_streamed_answer(
             usage=usage,
             prompt_variant=prompt_variant,
         )
+        if status == "completed":
+            kb = await db.get(KnowledgeBase, conversation.kb_id)
+            if kb is not None:
+                await _semantic_store(db, kb, question, content, outcome, prompt_variant, usage)
         await db.commit()
         return bundle
 

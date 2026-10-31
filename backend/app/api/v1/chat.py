@@ -411,6 +411,7 @@ async def _event_stream(
             "rewritten_query": outcome.rewritten_query,
             "rewrite_applied": outcome.trace.get("rewrite_applied", False),
             "reranked": outcome.trace.get("reranked", False),
+            "semantic_cache_hit": bool(preparation.cached_answer),
         },
     )
     yield _sse("retrieval", outcome.trace)
@@ -433,6 +434,30 @@ async def _event_stream(
                 mode="json"
             )
         yield _sse("done", refusal_done)
+        return
+
+    if preparation.cached_answer:
+        # Replay: retrieval + the cached evidence are already consistent, so the
+        # client gets the same answer and citations without a model call.
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        bundle = await _persist(
+            preparation,
+            question=question,
+            content=preparation.cached_answer,
+            status="completed",
+            latency_ms=latency_ms,
+            usage=preparation.cached_usage,
+        )
+        yield _sse("token", {"delta": preparation.cached_answer})
+        cached_done: dict[str, Any] = {
+            "conversation_id": str(preparation.conversation_id),
+            "status": "completed",
+            "latency_ms": latency_ms,
+            "semantic_cache_hit": True,
+        }
+        if bundle is not None:
+            cached_done["message"] = chat_service.to_message_out(bundle).model_dump(mode="json")
+        yield _sse("done", cached_done)
         return
 
     parts: list[str] = []

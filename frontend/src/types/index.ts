@@ -197,6 +197,8 @@ export interface RetrievalTrace {
   rewrite_error?: string | null
   sub_queries?: string[]
   cache_hit?: boolean
+  semantic_cache_hit?: boolean
+  semantic_cache_score?: number
   reranked: boolean
   rerank_error?: string | null
   config: Record<string, unknown>

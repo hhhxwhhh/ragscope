@@ -346,6 +346,11 @@ GRAPHRAG_TOTAL = _counter(
     "Graph extraction and expansion outcomes.",
     ("operation", "outcome"),
 )
+SEMANTIC_CACHE_TOTAL = _counter(
+    "ragscope_semantic_cache_total",
+    "Semantic answer cache outcomes.",
+    ("result",),
+)
 EVAL_RUNS_TOTAL = _counter(
     "ragscope_eval_runs_total",
     "Evaluation runs by terminal status.",
@@ -425,6 +430,10 @@ def observe_graph(operation: str, outcome: str) -> None:
     GRAPHRAG_TOTAL.labels(operation=operation, outcome=outcome).inc()
 
 
+def observe_semantic_cache(result: str) -> None:
+    SEMANTIC_CACHE_TOTAL.labels(result=result).inc()
+
+
 def observe_eval_run(status: str) -> None:
     EVAL_RUNS_TOTAL.labels(status=status).inc()
 
@@ -497,6 +506,11 @@ def snapshot() -> dict[str, Any]:
         "agent": {"runs_total": int(AGENT_RUNS_TOTAL.value())},
         "ingest": {"total": int(INGEST_TOTAL.value())},
         "graphrag": {"total": int(GRAPHRAG_TOTAL.value())},
+        "semantic_cache": {
+            "hit": int(SEMANTIC_CACHE_TOTAL.labels(result="hit").value()),
+            "miss": int(SEMANTIC_CACHE_TOTAL.labels(result="miss").value()),
+            "store": int(SEMANTIC_CACHE_TOTAL.labels(result="store").value()),
+        },
         "eval": {"runs_total": int(EVAL_RUNS_TOTAL.value())},
     }
 
@@ -513,6 +527,7 @@ __all__ = [
     "observe_ingest",
     "observe_llm_usage",
     "observe_retrieval",
+    "observe_semantic_cache",
     "render",
     "snapshot",
 ]
