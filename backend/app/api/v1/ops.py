@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -29,6 +29,7 @@ class OpsSnapshot(BaseModel):
     ingest: dict[str, int]
     graphrag: dict[str, int]
     eval: dict[str, int]
+    tasks: dict[str, Any]
 
 
 @router.get("/summary", response_model=OpsSnapshot)
@@ -39,4 +40,8 @@ async def ops_summary(current_user: CurrentUser) -> OpsSnapshot:
     process-local: behind multiple replicas each instance reports its own
     counters, so the aggregated view belongs in Prometheus, not here.
     """
-    return OpsSnapshot(**metrics.snapshot())
+    snapshot = metrics.snapshot()
+    from app.workers.dispatch import queue_depth, task_backend_info
+
+    snapshot["tasks"] = {**task_backend_info(), "queue_depth": await queue_depth()}
+    return OpsSnapshot(**snapshot)

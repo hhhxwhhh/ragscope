@@ -109,6 +109,10 @@ class Settings(BaseSettings):
     deep_enabled: bool = True
     deep_max_iterations: int = 2
 
+    # Background tasks
+    task_backend: str = "inline"  # inline | celery
+    celery_queue: str = "ragscope"
+
     # Public (API key) surface
     public_rate_limit_per_minute: int = 60
 

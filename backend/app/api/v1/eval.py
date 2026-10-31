@@ -24,7 +24,7 @@ from app.schemas.eval import (
     RoutingReportOut,
 )
 from app.services import eval_service, kb_service
-from app.services.eval_service import execute_run
+from app.workers.dispatch import schedule
 
 router = APIRouter(tags=["eval"])
 
@@ -220,7 +220,7 @@ async def create_run(
     run = await eval_service.create_run(db, dataset, payload)
     # Commit before scheduling: the executor opens its own session.
     await db.commit()
-    background.add_task(execute_run, run.id)
+    schedule(background, "eval", run.id)
     return _run_out(run, dataset.name)
 
 

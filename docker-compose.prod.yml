@@ -63,6 +63,9 @@ services:
       OTEL_ENABLED: ${OTEL_ENABLED:-true}
       OTEL_EXPORTER_ENDPOINT: jaeger:4317
       OTEL_SAMPLE_RATIO: ${OTEL_SAMPLE_RATIO:-0.2}
+      # Queue ingestion / evaluation in the worker instead of the API process.
+      TASK_BACKEND: celery
+      CELERY_QUEUE: ragscope
     volumes:
       - chroma:/data/chroma
       - storage:/data/storage
@@ -75,6 +78,71 @@ services:
         condition: service_healthy
     expose:
       - "8000"
+
+  # Long-running work: parsing, embedding, evaluation runs.
+  worker:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    command:
+      - "celery"
+      - "-A"
+      - "app.workers.celery_app:celery_app"
+      - "worker"
+      - "--loglevel=INFO"
+      - "--concurrency=2"
+      - "-Q"
+      - "ragscope"
+    env_file:
+      - .env
+    environment:
+      APP_ENV: prod
+      LOG_FORMAT: json
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      CHROMA_DIR: /data/chroma
+      STORAGE_DIR: /data/storage
+      HF_HOME: /data/hf
+      TASK_BACKEND: celery
+      CELERY_QUEUE: ragscope
+    volumes:
+      - chroma:/data/chroma
+      - storage:/data/storage
+      - hf_cache:/data/hf
+      - ./data:/app/data:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Scheduler for the periodic stale-work sweep. `--pool=solo` is enough for a
+  # single low-frequency job and avoids a prefork process doing nothing.
+  beat:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    command:
+      - "celery"
+      - "-A"
+      - "app.workers.celery_app:celery_app"
+      - "beat"
+      - "--loglevel=INFO"
+    env_file:
+      - .env
+    environment:
+      APP_ENV: prod
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      TASK_BACKEND: celery
+    depends_on:
+      redis:
+        condition: service_healthy
 
   # Scrapes /metrics once per 15s. The config file is bind-mounted so the
   # scrape targets can be edited without rebuilding an image.

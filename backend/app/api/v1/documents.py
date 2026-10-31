@@ -14,7 +14,7 @@ from app.models.user import User
 from app.schemas.common import Page
 from app.schemas.document import ChunkOut, ChunkSearchItem, DocumentOut
 from app.services import document_service, kb_service
-from app.workers.ingestion import run_ingestion
+from app.workers.dispatch import schedule
 
 router = APIRouter(tags=["documents"])
 
@@ -59,7 +59,7 @@ async def upload_document(
 
     # Commit before scheduling: the background task uses its own session.
     await db.commit()
-    background.add_task(run_ingestion, document.id)
+    schedule(background, "ingest", document.id)
     return DocumentOut.model_validate(document)
 
 
@@ -101,7 +101,7 @@ async def retry_document(
 
     await document_service.reset_for_retry(db, document)
     await db.commit()
-    background.add_task(run_ingestion, document.id)
+    schedule(background, "ingest", document.id)
     return DocumentOut.model_validate(document)
 
 
