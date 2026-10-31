@@ -84,13 +84,20 @@ TABLES = (
 
 async def _ensure_database() -> None:
     """Create the test database on first run (requires CREATEDB privileges)."""
-    connection = await asyncpg.connect(
-        user=settings.postgres_user,
-        password=settings.postgres_password,
-        host=settings.postgres_host,
-        port=settings.postgres_port,
-        database="postgres",
-    )
+    try:
+        connection = await asyncpg.connect(
+            user=settings.postgres_user,
+            password=settings.postgres_password,
+            host=settings.postgres_host,
+            port=settings.postgres_port,
+            database="postgres",
+        )
+    except OSError as exc:
+        raise RuntimeError(
+            "集成测试需要 PostgreSQL："
+            f"{settings.postgres_user}@{settings.postgres_host}:{settings.postgres_port} 不可达。"
+            "先执行 `make dev-db`，或只跑 `pytest tests/unit`（单元测试不需要数据库）。"
+        ) from exc
     try:
         exists = await connection.fetchval(
             "SELECT 1 FROM pg_database WHERE datname = $1", settings.postgres_db
@@ -107,7 +114,20 @@ def _upgrade_schema() -> None:
     command.upgrade(config, "head")
 
 
-def pytest_sessionstart(session: pytest.Session) -> None:
+def pytest_collection_modifyitems(
+    session: pytest.Session,
+    config: pytest.Config,  # noqa: ARG001 - pytest passes it positionally
+    items: list[pytest.Item],
+) -> None:
+    """Prepare the database lazily, only when an integration test was collected.
+
+    ``pytest_sessionstart`` runs before collection, so it cannot know whether the
+    run needs PostgreSQL. Preparing it unconditionally made every pure-unit run
+    (and every CI job without a database) fail during startup instead of running.
+    """
+    needs_db = any("integration" in item.keywords for item in items)
+    if not needs_db:
+        return
     asyncio.run(_ensure_database())
     _upgrade_schema()
 

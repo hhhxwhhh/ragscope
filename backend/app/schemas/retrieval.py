@@ -18,6 +18,18 @@ class RetrievalConfigIn(BaseModel):
     multi_query_count: int | None = Field(default=None, ge=1, le=5)
     multi_query_timeout_seconds: float | None = Field(default=None, ge=1, le=30)
     use_cache: bool | None = None
+    use_graph: bool | None = None
+    graph_extra_top_k: int | None = Field(default=None, ge=0, le=10)
+    # CRAG: grade-then-repair. Exposed so the debug panel can A/B the retry pass.
+    use_crag: bool | None = None
+    crag_use_llm_grader: bool | None = None
+    crag_correct_threshold: float | None = Field(default=None, ge=0, le=1)
+    crag_ambiguous_threshold: float | None = Field(default=None, ge=0, le=1)
+    crag_retry_top_k: int | None = Field(default=None, ge=1, le=50)
+    crag_relax_factor: float | None = Field(default=None, ge=0.1, le=1)
+    crag_retry_add_limit: int | None = Field(default=None, ge=0, le=10)
+    use_compress: bool | None = None
+    compress_mode: str | None = Field(default=None, pattern="^(lexical|llm)$")
 
 
 class DebugRequest(BaseModel):
@@ -40,6 +52,10 @@ class CandidateOut(BaseModel):
     fused_score: float | None = None
     rerank_score: float | None = None
     matched_queries: list[int] | None = None
+    graph_score: float | None = None
+    graph_via: str | None = None
+    crag_via: str | None = None
+    compressed: bool | None = None
 
 
 class DebugResponse(BaseModel):
@@ -57,3 +73,6 @@ class DebugResponse(BaseModel):
     stage_timings: dict[str, float]
     counts: dict[str, int]
     candidates: dict[str, list[CandidateOut]]
+    graph: dict[str, Any] = Field(default_factory=dict)
+    crag: dict[str, Any] = Field(default_factory=dict)
+    compress: dict[str, Any] = Field(default_factory=dict)

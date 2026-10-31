@@ -95,6 +95,32 @@ class Settings(BaseSettings):
     graph_max_chunks_per_build: int = 200
     graph_extract_timeout_seconds: float = 60.0
 
+    # CRAG: grade the evidence before answering and retry when it is weak.
+    # Off by default because a retry round is an extra embedding + BM25 pass on
+    # every ambiguous question; enable it per knowledge base where recall matters
+    # more than latency.
+    crag_enabled: bool = False
+    crag_use_llm_grader: bool = False
+    crag_grader_timeout_seconds: float = 4.0
+    crag_retry_timeout_seconds: float = 8.0
+    # Thresholds are read against the strongest available signal (rerank first,
+    # dense cosine otherwise), both normalised to 0..1.
+    crag_correct_threshold: float = 0.55
+    crag_ambiguous_threshold: float = 0.30
+    crag_retry_top_k: int = 10
+    # Dense floor for the retry pass: relaxing it is the point, since the first
+    # pass may have rejected the right chunk for being phrased differently.
+    crag_relax_factor: float = 0.6
+    crag_retry_add_limit: int = 3
+
+    # Contextual compression: trim non-matching sentences out of each chunk
+    # before the prompt is assembled. "lexical" is free and offline; "llm" asks
+    # the model to copy the sentences it would cite (verbatim-checked).
+    compress_enabled: bool = False
+    compress_mode: str = "lexical"
+    compress_timeout_seconds: float = 6.0
+    compress_min_chars: int = 160
+
     # Chat
     llm_timeout_seconds: float = 60.0
     max_answer_tokens: int = 1024

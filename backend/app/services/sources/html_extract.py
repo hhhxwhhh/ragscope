@@ -83,9 +83,14 @@ _TRACKING_PARAMS = {
     "ref",
     "ref_src",
 }
+# The web/sitemap crawlers extract *HTML* text. Binary assets and office files
+# are skipped here rather than half-parsed: a PDF or .docx needs the document
+# ingestion pipeline (upload or the connector's own file handling), not the
+# readability extractor.
 _SKIP_EXTENSIONS = (
     ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".css", ".js",
     ".zip", ".rar", ".7z", ".mp4", ".mp3", ".woff", ".woff2", ".ttf", ".exe",
+    ".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx",
 )
 _MULTI_NEWLINE = re.compile(r"\n{3,}")
 _TRAILING_SPACE = re.compile(r"[ \t]+\n")

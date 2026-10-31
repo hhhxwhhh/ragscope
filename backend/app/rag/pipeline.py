@@ -50,6 +50,17 @@ class RetrievalConfig:
     use_cache: bool = True
     use_graph: bool = True
     graph_extra_top_k: int = 3
+    # CRAG: grade-then-repair.
+    use_crag: bool = False
+    crag_use_llm_grader: bool = False
+    crag_correct_threshold: float = 0.55
+    crag_ambiguous_threshold: float = 0.30
+    crag_retry_top_k: int = 10
+    crag_relax_factor: float = 0.6
+    crag_retry_add_limit: int = 3
+    # Contextual compression of the final context.
+    use_compress: bool = False
+    compress_mode: str = "lexical"
 
     @classmethod
     def from_kb(cls, kb: KnowledgeBase) -> "RetrievalConfig":
@@ -92,6 +103,27 @@ class RetrievalConfig:
             graph_extra_top_k=_clamp_int(
                 raw, "graph_extra_top_k", settings.graph_extra_top_k, 0, 10
             ),
+            use_crag=_clamp_bool(raw, "use_crag", settings.crag_enabled),
+            crag_use_llm_grader=_clamp_bool(
+                raw, "crag_use_llm_grader", settings.crag_use_llm_grader
+            ),
+            crag_correct_threshold=_clamp_float(
+                raw, "crag_correct_threshold", settings.crag_correct_threshold, 0.0, 1.0
+            ),
+            crag_ambiguous_threshold=_clamp_float(
+                raw, "crag_ambiguous_threshold", settings.crag_ambiguous_threshold, 0.0, 1.0
+            ),
+            crag_retry_top_k=_clamp_int(
+                raw, "crag_retry_top_k", settings.crag_retry_top_k, 1, 50
+            ),
+            crag_relax_factor=_clamp_float(
+                raw, "crag_relax_factor", settings.crag_relax_factor, 0.1, 1.0
+            ),
+            crag_retry_add_limit=_clamp_int(
+                raw, "crag_retry_add_limit", settings.crag_retry_add_limit, 0, 10
+            ),
+            use_compress=_clamp_bool(raw, "use_compress", settings.compress_enabled),
+            compress_mode=_mode(raw, "compress_mode", settings.compress_mode),
         )
 
 
@@ -128,6 +160,19 @@ def _clamp_bool(raw: dict[str, Any], key: str, default: bool) -> bool:
     return bool(value)
 
 
+COMPRESS_MODES = ("lexical", "llm")
+
+
+def _mode(
+    raw: dict[str, Any],
+    key: str,
+    default: str,
+    allowed: tuple[str, ...] = COMPRESS_MODES,
+) -> str:
+    value = str(raw.get(key, default) or default).lower()
+    return value if value in allowed else default
+
+
 def _ms(started: float) -> float:
     return round((time.perf_counter() - started) * 1000, 1)
 
@@ -149,6 +194,8 @@ def _trace_candidate(candidate: dict[str, Any], content_chars: int = 400) -> dic
         "matched_queries",
         "graph_score",
         "graph_via",
+        "crag_via",
+        "compressed",
     )
     payload = {key: candidate.get(key) for key in keys}
     payload["content"] = (candidate.get("content") or "")[:content_chars]
@@ -210,6 +257,72 @@ def _merge_bm25_hit(
         candidate["matched_queries"].append(query_index)
 
 
+async def _relaxed_search(
+    db: AsyncSession,
+    kb: KnowledgeBase,
+    queries: list[str],
+    config: RetrievalConfig,
+    *,
+    exclude: set[str],
+    floor: float,
+) -> list[dict[str, Any]]:
+    """CRAG's repair pass: same two retrievers, a lower bar.
+
+    Two things are relaxed on purpose. The dense floor drops, because the first
+    pass may have dropped the right chunk for being phrased differently. And
+    BM25 runs unconditionally, because the main loop gates it on dense hits —
+    the very     gate that produced "no evidence" for this query.
+    """
+    embeddings = await embed_texts_async(queries, is_query=True)
+    merged: dict[str, dict[str, Any]] = {}
+    for query_index, (sub_query, embedding) in enumerate(
+        zip(queries, embeddings, strict=True), start=1
+    ):
+        vector_hits = await anyio.to_thread.run_sync(
+            partial(
+                vector_store.query,
+                kb.id,
+                embedding,
+                config.crag_retry_top_k,
+                index_version=kb.index_version,
+            )
+        )
+        for rank, hit in enumerate(
+            [hit for hit in vector_hits if hit.score >= floor], start=1
+        ):
+            _merge_vector_hit(merged, hit, rank, query_index)
+
+        bm25_hits = await bm25_index.search(
+            db, kb.id, kb.index_version, sub_query, config.crag_retry_top_k
+        )
+        for rank, hit in enumerate(bm25_hits, start=1):
+            _merge_bm25_hit(merged, hit, rank, query_index)
+
+    found: list[dict[str, Any]] = []
+    for chunk_id, candidate in merged.items():
+        if str(chunk_id) in exclude:
+            continue
+        candidate["crag_via"] = "relaxed_retry"
+        candidate["matched_queries"] = sorted(set(candidate.get("matched_queries") or []))
+        found.append(candidate)
+
+    found.sort(
+        key=lambda candidate: (
+            candidate.get("vector_score") or 0.0,
+            candidate.get("bm25_score") or 0.0,
+        ),
+        reverse=True,
+    )
+    logger.info(
+        "crag retry kb=%s queries=%d floor=%.3f new=%d",
+        kb.id,
+        len(queries),
+        floor,
+        len(found),
+    )
+    return found
+
+
 async def retrieve(
     db: AsyncSession,
     kb: KnowledgeBase,
@@ -253,7 +366,9 @@ async def _retrieve(
         "bm25_ms": 0.0,
         "fusion_ms": 0.0,
         "rerank_ms": 0.0,
+        "crag_ms": 0.0,
         "graph_ms": 0.0,
+        "compress_ms": 0.0,
     }
 
     # 1. Rewrite the query using conversation history (multi-turn only).
@@ -420,6 +535,70 @@ async def _retrieve(
             )[: config.final_top_k]
     timings["rerank_ms"] = _ms(started)
 
+    # 7.5 CRAG: grade the evidence and repair it before it reaches the prompt.
+    # Placement matters — grading runs after rerank because the cross-encoder is
+    # the only signal comparable across queries, and before graph expansion
+    # because graph neighbours are inferred evidence and must not be allowed to
+    # make a weak result look graded-correct.
+    crag_payload: dict[str, Any] = {"applied": False}
+    crag_candidates: list[dict[str, Any]] = []
+    if config.use_crag:
+        started = time.perf_counter()
+        from app.rag import crag
+
+        verdict = await crag.grade(
+            rewritten,
+            final_candidates,
+            use_llm=config.crag_use_llm_grader,
+            timeout_seconds=get_settings().crag_grader_timeout_seconds,
+            correct_threshold=config.crag_correct_threshold,
+            ambiguous_threshold=config.crag_ambiguous_threshold,
+        )
+        relaxed_floor = round(config.min_vector_score * config.crag_relax_factor, 4)
+        crag_payload = {
+            "applied": True,
+            "action": verdict.action,
+            "confidence": verdict.confidence,
+            "signal": verdict.signal,
+            "grader": verdict.grader,
+            "reason": verdict.reason,
+            "error": verdict.error,
+            "relaxed_floor": relaxed_floor,
+            "retry_queries": [],
+            "retry_source": None,
+            "retry_error": None,
+            "added": 0,
+        }
+        if verdict.action in (crag.AMBIGUOUS, crag.INCORRECT):
+            repair = await crag.repair_queries(
+                rewritten,
+                timeout_seconds=get_settings().crag_retry_timeout_seconds,
+            )
+            retry_queries = repair.queries or crag.keyword_queries(rewritten)
+            crag_payload["retry_queries"] = retry_queries
+            crag_payload["retry_source"] = repair.source
+            crag_payload["retry_error"] = repair.error
+            if retry_queries:
+                already = {str(candidate["chunk_id"]) for candidate in final_candidates}
+                crag_candidates = await _relaxed_search(
+                    db,
+                    kb,
+                    retry_queries,
+                    config,
+                    exclude=already,
+                    floor=relaxed_floor,
+                )
+                crag_candidates = crag_candidates[: config.crag_retry_add_limit]
+                crag_payload["added"] = len(crag_candidates)
+                if crag_candidates:
+                    for candidate in crag_candidates:
+                        candidates[candidate["chunk_id"]] = candidate
+                    # Appended, not merged into the reranked head: these chunks
+                    # were never judged by the cross-encoder, so keeping them at
+                    # the tail makes their lower confidence visible downstream.
+                    final_candidates = final_candidates + crag_candidates
+        timings["crag_ms"] = _ms(started)
+
     # 8. Optional one-hop graph expansion. New chunks are appended after the
     # reranked list (never reordered into it): the cross-encoder judged those
     # chunks directly, while a graph neighbour is inferred evidence and should
@@ -447,6 +626,36 @@ async def _retrieve(
             ]
         timings["graph_ms"] = _ms(started)
 
+    # 9. Contextual compression: drop the sentences that do not carry evidence.
+    # Last stage on purpose — it runs on the exact list that becomes the prompt,
+    # including graph and CRAG additions, so the token saving is real rather than
+    # measured against a subset.
+    compress_payload: dict[str, Any] = {"applied": False, "mode": config.compress_mode}
+    if config.use_compress and final_candidates:
+        started = time.perf_counter()
+        from app.rag import compress as compress_module
+
+        result = await compress_module.compress(
+            rewritten,
+            final_candidates,
+            enabled=True,
+            mode=config.compress_mode,
+            timeout_seconds=get_settings().compress_timeout_seconds,
+            min_chars=get_settings().compress_min_chars,
+        )
+        final_candidates = result.candidates
+        compress_payload = {
+            "applied": result.applied,
+            "mode": result.mode,
+            "original_chars": result.original_chars,
+            "compressed_chars": result.compressed_chars,
+            "saved_chars": result.original_chars - result.compressed_chars,
+            "dropped_sentences": result.dropped_sentences,
+            "error": result.error,
+            "per_chunk": result.per_chunk,
+        }
+        timings["compress_ms"] = _ms(started)
+
     timings["total_ms"] = _ms(total_started)
 
     for candidate in candidates.values():
@@ -466,12 +675,15 @@ async def _retrieve(
         "config": asdict(config),
         "stage_timings": timings,
         "graph": graph_payload,
+        "crag": crag_payload,
+        "compress": compress_payload,
         "counts": {
             "vector": len(vector_trace),
             "bm25": len(bm25_trace),
             "fused": len(fused),
             "final": len(final_candidates),
             "graph": len(graph_candidates),
+            "crag": len(crag_candidates),
             "queries": len(queries),
             "vector_hits": vector_hits_total,
             "bm25_hits": bm25_hits_total,
@@ -482,6 +694,7 @@ async def _retrieve(
             "fused": [_trace_candidate(candidate) for candidate in fused_candidates],
             "final": [_trace_candidate(candidate) for candidate in final_candidates],
             "graph": [_trace_candidate(candidate) for candidate in graph_candidates],
+            "crag": [_trace_candidate(candidate) for candidate in crag_candidates],
         },
     }
 

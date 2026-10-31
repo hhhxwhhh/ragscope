@@ -48,4 +48,7 @@ async def debug_retrieval(
         stage_timings=trace["stage_timings"],
         counts=trace["counts"],
         candidates=trace["candidates"],
+        graph=trace.get("graph") or {},
+        crag=trace.get("crag") or {},
+        compress=trace.get("compress") or {},
     )

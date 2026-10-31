@@ -100,6 +100,17 @@ class _CounterChild:
         with parent._lock:
             parent._values[self._key] = parent._values.get(self._key, 0.0) + amount
 
+    def value(self) -> float:
+        """Current value of this label combination (0 before the first ``inc``).
+
+        ``Counter.value()`` sums every combination; callers that already selected
+        a label set need the single series, which is what ``snapshot()`` reads
+        for the semantic-cache hit/miss split.
+        """
+        parent = self._parent
+        with parent._lock:
+            return parent._values.get(self._key, 0.0)
+
 
 class Gauge(_Metric):
     kind = "gauge"
