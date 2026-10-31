@@ -11,6 +11,7 @@ from app.api.v1 import (
     feedback,
     health,
     kbs,
+    mcp,
     ops,
     prompts,
     public,
@@ -34,3 +35,4 @@ api_router.include_router(dashboard.router)
 api_router.include_router(ops.router)
 api_router.include_router(api_keys.router)
 api_router.include_router(public.router)
+api_router.include_router(mcp.router)
