@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ragscope
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"        # SSE
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["ragscope.example.com"]
+      secretName: ragscope-tls
+  rules:
+    - host: ragscope.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service: { name: ragscope-api, port: { number: 8000 } }
+          - path: /healthz
+            pathType: Prefix
+            backend:
+              service: { name: ragscope-api, port: { number: 8000 } }
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: ragscope-web, port: { number: 80 } }

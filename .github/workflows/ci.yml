@@ -70,6 +70,15 @@ jobs:
       - name: Lint
         run: ruff check app scripts tests
 
+      - name: Import smoke test
+        # Catches circular imports and optional-dependency mistakes that unit
+        # tests would not touch (MCP server, Celery app, graph service).
+        run: |
+          python -c "import app.main"
+          python -c "from app.mcp.server import handle_message"
+          python -c "from app.workers.tasks import ingest_document_task, run_evaluation_task"
+          python -c "from app.services import graph_service"
+
       - name: Test
         run: pytest -q
 

@@ -2,7 +2,7 @@
 
 通用文档知识库问答平台（RAG + Agent）：把产品手册、技术文档、制度流程、课程资料或研究报告变成可检索、可引用、可评测的知识库。简单问题走单轮混合检索，比较和多跳问题交给 Agent 多步检索；聊天页的「自动」模式会按问题复杂度在两者之间路由。每次回答都能看清检索到底发生了什么，并用固定评测集判断改配置是不是真的有用。
 
-这是一个面向 Python 后端实习的作品集项目。上传、切块、向量/BM25 混合检索、流式回答是 RAG 的常规链路；真正想讲清楚的是后半部分：**检索可观测性 + 评测工作台**。每次回答都记录改写后的 query、四个检索阶段的候选和耗时；任意一次检索可以固化成评测用例；不同检索配置在同一个数据集上跑，对比 recall@k、MRR、拒答率和延迟。
+这是一个面向 Python 后端实习的作品集项目（v0.5 起补齐了可观测、接入协议、多智能体与部署层）。上传、切块、向量/BM25 混合检索、流式回答是 RAG 的常规链路；真正想讲清楚的是后半部分：**检索可观测性 + 评测工作台**。每次回答都记录改写后的 query、四个检索阶段的候选和耗时；任意一次检索可以固化成评测用例；不同检索配置在同一个数据集上跑，对比 recall@k、MRR、拒答率和延迟。
 
 检索与生成基于 **LangChain 1.x / LangGraph 1.x**：`ChatOpenAI` 接 DeepSeek，`HuggingFaceEmbeddings` + `Chroma` 适配现有索引，查询改写、多查询扩展和最终作答都是 LCEL 链，Agent 模式用 `create_agent` 编译 ReAct 状态图。BM25、RRF、cross-encoder 重排和检索 trace 仍由项目实现——这些正是需要精确拿到排名、分数和耗时的部分。产品形态参考了 [RAGFlow](https://github.com/infiniflow/ragflow) 的检索测试台、[Dify](https://github.com/langgenius/dify) 的知识库设计，指标定义参考 [RAGAS](https://github.com/explodinggradients/ragas)，但没有引入 LLM-as-judge。
 
@@ -18,7 +18,9 @@
 | 学习 / 研究 | 课件、论文、调研报告 | 两种方法有什么区别、这份报告的核心结论 | 比较型问答、多步检索、来源定位 |
 | 个人知识库 | 笔记、剪藏、阅读摘录 | 我之前记过什么、这个观点出自哪里 | 混合检索、引用抽屉、检索 trace |
 
-仓库自带一套「星河科技」消费电子演示语料（产品手册、售后政策、FAQ 和 29 条评测用例），用来跑通截图和指标。它只是其中一个语料样例，不是产品边界。完整的场景矩阵、角色链路、演示剧本、指标口径和简历表述见 **[docs/use-case.md](docs/use-case.md)**。
+仓库自带一套「星河科技」消费电子演示语料（产品手册、售后政策、FAQ 和 29 条评测用例），用来跑通截图和指标。它只是其中一个语料样例，不是产品边界。完整的场景矩阵、角色链路、演示剧本、指标口径和简历表述见 **[docs/use-case.md](docs/use-case.md)**；
+v0.5 新增的企业级子系统（指标/追踪、API Key、MCP、多智能体、GraphRAG、Celery、K8s）见
+**[docs/platform.md](docs/platform.md)**；面试讲法与追问应答见 **[docs/interview-guide.md](docs/interview-guide.md)**。
 
 ## 现在能做什么
 
@@ -42,6 +44,12 @@
 - 生成评测（可选）：在检索评测之后逐条调用 LLM，用确定性规则统计生成拒答准确率、误拒答率、引用合规率、生成耗时与 token；不引入 LLM-as-judge，生成失败不污染已有的检索指标
 - 路由评测：用例可标注期望路径（`rag` / `agent`），按确定性路由器的实际输出计算准确率、Agent 类别的 precision / recall / F1 和混淆矩阵；未标注用例只展示预测，不污染指标
 - Dashboard：知识库 / 文档 / chunk / 会话 / 评测 KPI，Agent 运行成功率、平均步数 / 工具调用 / 耗时 / token，用户满意度、引用有效率、人工抽检覆盖率与通过率，14 天活动趋势，最近评测结果
+- 深度研究（多智能体）：LangGraph 状态机 `planner → researcher → critic`，critic 判定证据不足时带补充查询回到 researcher，最多 2 轮；子问题拆解通过 SSE `plan` 事件实时展示，最终回答仍走 grounded Prompt，引用口径与单轮一致
+- GraphRAG：LLM 抽取实体与关系落 PostgreSQL，查询期用「词表匹配 + 一跳邻居」扩展候选，并记录 `graph_score` / `graph_via`；构建是离线后台任务，索引期间用 Redis `SET NX` 做单飞，前端 ECharts 力导向图可直接查看
+- 机器接入：API Key（`rk_` 前缀、只存 SHA-256、scope 分为 `kb:read` / `kb:write` / `chat` / `admin`、可设过期与吊销）+ 审计日志；`/public/*` 提供无状态检索与问答，按 key 做固定窗口限流
+- MCP Server：手写 JSON-RPC 2.0 协议层，stdio 与 HTTP 两种传输共用同一个 dispatcher，把知识库暴露为 `list_knowledge_bases` / `search_knowledge_base` / `ask_knowledge_base` / `get_document_outline` 四个只读工具
+- 可观测性：自研 Prometheus 指标层（HTTP、检索分阶段、缓存命中、拒答、token、Agent 步数、入库、图谱），`/metrics` 抓取端点 + `/api/v1/ops/summary` 运维快照；OpenTelemetry 可选接入 OTLP，响应头返回 `X-Trace-ID`；日志可切 JSON 并自动注入 `request_id` / `trace_id`
+- 异步任务：`TASK_BACKEND=inline|celery` 一键切换，Celery worker 接管入库与评测运行，broker 不可用时自动降级为进程内执行；`/ops/summary` 暴露队列积压
 
 ## 一次检索的链路
 
@@ -161,9 +169,13 @@ Agent 路径用 `langchain.agents.create_agent` 编译一张 LangGraph ReAct 状
 | RAG 框架 | LangChain 1.x（LCEL、`ChatOpenAI`、`HuggingFaceEmbeddings`、`langchain-chroma`）、LangGraph 1.x（`create_agent` ReAct 图） |
 | 检索 | BGE 中文向量（`BAAI/bge-small-zh-v1.5`）、rank_bm25 + jieba、`BAAI/bge-reranker-base` |
 | 生成 | LangChain `ChatOpenAI` 对接 DeepSeek（OpenAI 兼容接口），SSE 流式 |
-| 前端 | Vue 3 + TypeScript + Vite、Element Plus、Pinia、ECharts、markdown-it + DOMPurify |
+| Agent / 编排 | LangGraph 1.x：`create_agent` ReAct 图、`StateGraph` 多智能体（planner / researcher / critic） |
+| 协议 | MCP（JSON-RPC 2.0，2025-06-18 版本协商）、OpenAI 兼容接口、SSE、REST |
+| 可观测 | Prometheus 指标（自研暴露层）、OpenTelemetry + OTLP/Jaeger、结构化 JSON 日志 |
+| 异步 | Celery 5 + Redis broker、`acks_late`、CronJob/beat 级 stale 回收 |
+| 前端 | Vue 3 + TypeScript + Vite、Element Plus、Pinia、Vue Router、ECharts（折线 + 力导向图）、markdown-it + DOMPurify |
 | 测试 | pytest + pytest-asyncio、httpx ASGITransport、真实 PostgreSQL/Redis、fake retriever |
-| 基础设施 | 多阶段 Dockerfile、Docker Compose、Nginx（SSE 不缓冲）、Alembic、ruff、GitHub Actions |
+| 基础设施 | 多阶段 Dockerfile、Docker Compose（api / worker / beat / prometheus / jaeger）、Nginx（SSE 不缓冲）、K8s 清单（Deployment / HPA / PDB / Ingress / CronJob）、Alembic、ruff、pre-commit、GitHub Actions、Locust |
 
 ## 目录
 
@@ -171,36 +183,50 @@ Agent 路径用 `langchain.agents.create_agent` 编译一张 LangGraph ReAct 状
 rag_learn/
 ├── backend/
 │   ├── app/
-│   │   ├── api/v1/          # auth, kbs, documents, chat, retrieval, eval, prompts, dashboard
-│   │   ├── core/            # 配置、鉴权、依赖、错误处理
-│   │   ├── models/          # SQLAlchemy 模型，含 evaluation
+│   │   ├── api/v1/          # auth, kbs, documents, chat, retrieval, eval, prompts,
+│   │   │                    # dashboard, api_keys, public, mcp, graph, ops
+│   │   ├── core/            # 配置、鉴权(Principal/scope)、metrics、tracing、
+│   │   │                    # ratelimit、结构化日志、错误处理
+│   │   ├── mcp/             # 手写 MCP：protocol / tools / server(stdio)
+│   │   ├── models/          # SQLAlchemy 模型：evaluation、api_key、graph …
 │   │   ├── rag/             # llm, embedder, vector_store, bm25, fusion,
 │   │   │                    # reranker, query_rewriter, multi_query, prompt,
 │   │   │                    # answer (LCEL), retrieval_cache, pipeline,
-│   │   │                    # router (auto mode), agent/ (tools + ReAct loop)
+│   │   │                    # router (auto mode), agent/ (tools + ReAct loop
+│   │   │                    # + graph 多智能体)
 │   │   ├── schemas/         # Pydantic 请求/响应
-│   │   ├── services/        # 入库、检索、会话、反馈、抽检、评测、看板
-│   │   └── workers/         # 文档入库后台任务
+│   │   ├── services/        # 入库、检索、会话、反馈、抽检、评测、看板、
+│   │   │                    # API Key/审计、图谱
+│   │   └── workers/         # 入库后台任务、celery_app、tasks、dispatch
 │   ├── alembic/versions/
 │   ├── scripts/
 │   │   ├── seed_demo.py     # 一键创建演示账号、知识库、文档和 29 条用例
 │   │   ├── seed_eval.py     # 只重建评测数据集
 │   │   ├── ocr_pdf.py       # 扫描件 PDF -> 文本（离线预处理）
+│   │   ├── build_graph.py   # 构建/清空 GraphRAG 实体图谱
 │   │   └── reindex_vectors.py
 │   ├── tests/{unit,integration}/
 │   └── Dockerfile
 ├── frontend/src/
-│   ├── api/                 # axios 封装与 SSE
+│   ├── api/                 # axios 封装、SSE 解析、keys/ops/graph 客户端
 │   ├── components/          # RetrievalDebugPanel, EvalPanel, ReviewQueuePanel
-│   ├── views/               # Dashboard, KbDetail, Chat, EvalRun, EvalCompare
+│   ├── views/               # Dashboard, KbDetail, Chat, Graph, Ops, ApiKeys,
+│   │                        # EvalRun, EvalCompare
 │   └── types/
 ├── data/                    # 5 篇虚构的星河科技产品文档
-├── docs/                    # 应用场景、架构、评测设计、面试题
+├── docs/                    # 应用场景、架构、评测设计、MCP、平台层、面试手册
 ├── notebooks/learning/      # 最开始的手写 RAG notebook
-├── deploy/nginx.conf        # SPA + /api 代理 + SSE 不缓冲
+├── deploy/
+│   ├── nginx.conf           # SPA + /api 代理 + SSE 不缓冲
+│   ├── prometheus.yml       # 抓取配置
+│   ├── alerts.yml           # 错误率/延迟/入库失败/拒答率告警规则
+│   ├── k8s/                 # Deployment / HPA / PDB / Ingress / CronJob
+│   └── locust/              # 读路径压测脚本
+├── .pre-commit-config.yaml  # ruff + YAML 校验 + 导入冒烟 + 前端类型检查
+├── Makefile                 # make help 查看全部命令
 ├── .github/workflows/ci.yml # 后端 ruff/pytest + 前端 typecheck/build
 ├── docker-compose.yml       # 开发：只起 Postgres + Redis
-└── docker-compose.prod.yml  # 生产：nginx + api + db + redis
+└── docker-compose.prod.yml  # 生产：nginx + api + worker + beat + prometheus + jaeger
 ```
 
 ## 本地启动
@@ -268,6 +294,88 @@ docker compose -f docker-compose.prod.yml exec api python scripts/seed_demo.py
 
 > 镜像需要安装 CPU 版 torch，首次构建下载量较大；本地开发仍建议用上面的 uvicorn + Vite 组合。
 
+## 企业级能力怎么跑起来
+
+这一层不是概念演示，每条命令都能在本机复现。设计说明见 **[docs/platform.md](docs/platform.md)**。
+
+### API Key 与机器接入
+
+```bash
+# 1. 在 Web 端「API Key」页创建，或直接调接口（需要登录态）
+curl -s -X POST localhost:8000/api/v1/api-keys \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"smoke","scopes":["kb:read","chat"],"expires_in_days":30}'
+
+# 2. 无状态检索，不建会话、不写消息
+curl -s -X POST localhost:8000/api/v1/public/kbs/$KB_ID/search \
+  -H "Authorization: Bearer rk_xxx" -H 'Content-Type: application/json' \
+  -d '{"query":"X1 的电池容量是多少","top_k":5}'
+
+# 3. 无状态问答；没有证据时直接拒答，不消耗 token
+curl -s -X POST localhost:8000/api/v1/public/kbs/$KB_ID/ask \
+  -H "Authorization: Bearer rk_xxx" -H 'Content-Type: application/json' \
+  -d '{"question":"进水还能保修吗"}'
+```
+
+密钥只存 SHA-256、明文只显示一次；`/public/*` 按 key 做 60 次/分钟限流；
+`admin` 之外的越权调用在依赖层就被拒绝。
+
+### MCP：让 Claude Desktop / Cursor 直接检索知识库
+
+```bash
+cd backend
+RAGSCOPE_API_KEY=rk_xxx ./.venv/Scripts/python.exe -m app.mcp.server
+```
+
+客户端配置与协议设计见 **[docs/mcp.md](docs/mcp.md)**。工具是只读的：列库、混合检索、
+带引用问答、文档大纲。
+
+### 深度研究与知识图谱
+
+```text
+聊天页右上角：自动 / 快速 / Agent / 深度研究
+```
+
+深度研究走 `planner → researcher → critic` 状态机，critic 认为证据不足时会带补充查询回到
+research 节点，最多 2 轮；SSE 的 `plan` 事件让前端在检索开始前就展示子问题拆解。
+
+图谱需要先构建一次（每个 chunk 一次 LLM 调用）：
+
+```bash
+make graph           # 或：PYTHONPATH=. .venv/Scripts/python.exe scripts/build_graph.py --all
+```
+
+构建是幂等的，重复执行只会累加 `weight` / `mention_count`。建好之后检索会自动多一跳扩展，
+在检索调试台的阶段瀑布里能看到 `图扩展（1 跳）` 的耗时。
+
+### Celery worker
+
+```bash
+# 本地想验证 worker：先起 Redis，再
+TASK_BACKEND=celery celery -A app.workers.celery_app:celery_app worker -Q ragscope -l info
+```
+
+`TASK_BACKEND` 默认 `inline`，本地和 CI 不需要额外进程；broker 不可用时会自动降级，
+上传不会丢。
+
+### 观测
+
+| 入口 | 内容 |
+|---|---|
+| `GET /metrics` | Prometheus 抓取端点（可设 `METRICS_TOKEN` 保护） |
+| `GET /api/v1/ops/summary` | 请求量 / 错误率 / P50 P95 P99 / 拒答率 / token / 队列积压 |
+| 响应头 `X-Trace-ID` | 开启 OTel 后可贴进 Jaeger 查完整链路 |
+| `docker compose -f docker-compose.prod.yml up` | 自带 Prometheus(:9090) 与 Jaeger(:16686) |
+
+日志：`LOG_FORMAT=json` 输出单行 JSON，自动带 `request_id` / `trace_id`。
+
+### 部署与压测
+
+```bash
+kubectl apply -k deploy/k8s            # 参考拓扑：Deployment/HPA/PDB/Ingress/CronJob
+locust -f deploy/locust/locustfile.py  # 只压读路径，不烧 token
+```
+
 ## 评测设计
 
 - 用例标注到 chunk 级：`relevant_refs = [{document_id, chunk_index, filename}]`；数据集同时快照标注时的 `chunk_size / chunk_overlap`，切块参数变了就不该继续用旧标注
@@ -315,19 +423,22 @@ cd backend
 - Prompt 变体随代码发布，新增版本需要改代码和发版；没有面向运营的 Prompt 编辑、灰度与回滚平台
 - 支持 .md / .txt / .pdf / .docx，但扫描件 PDF 需要 OCR；PDF 只保留页码，不保留版式与表格结构
 - 多查询扩展是串行调用 LLM，开启后会增加一次生成侧延迟；Redis 缓存不做过期淘汰以外的容量治理
-- 后台任务和 API 同进程，只有单副本语义；进程重启会中断任务（启动时标 failed，可重跑）
-- 限流用 Redis 计数并在每次失败时重置窗口；没有实现分布式滑动窗口或令牌桶
-- 没有团队、RBAC 和审计日志；Chroma 为嵌入式单机模式
+- 限流用 Redis 固定窗口并在每次失败时重置窗口；没有实现滑动窗口或令牌桶
+- 权限模型是「用户拥有知识库」+ API Key scope，没有 workspace / 团队成员角色；审计只覆盖密钥生命周期与写操作，不是全量审计
+- Chroma 为嵌入式单机模式，K8s 里 RWO 卷实际把 API 限制在单副本；要水平扩展需换 server 模式向量库
+- GraphRAG 只有一跳邻居，没有社区聚类与摘要；抽取质量取决于模型，没有做实体消歧
+- 深度研究是三种模式的架构论证，还没有做「同一批多跳问题在三种模式下的对照实验」
 - 没有 Playwright E2E，前端只做类型检查和构建验证
-- Agent 是单张 LangGraph ReAct 图、单轮预算内的工具循环，没有多 Agent 协作、长期记忆和自动反思；GraphRAG、多模态不在范围内
 
 ## 接下来
 
 - 扩大「用户反馈回归集」和「人工抽检回归集」，把线上点踩、抽检失败持续转成回归用例，而不是继续堆检索组件
 - 用生成评测对 Prompt 变体做 A/B：同一数据集、同一索引版本，只看拒答 / 引用 / 延迟的取舍；样本足够后再考虑接入 LLM-as-judge 做忠实度评估，并用人工抽检结果校准 judge
-- 多副本部署时把 BackgroundTasks 迁到 Celery/RQ，Chroma 换成独立向量服务
-- 登录限流升级为滑动窗口/令牌桶，并增加审计日志
-- 增加 Playwright 冒烟测试和前端组件测试
+- 用同一份标注集对照三种模式（快速 / Agent / 深度）的 recall、引用合规率与成本，给「多智能体到底值不值」一个数字答案
+- 语义缓存：当前缓存是精确 query 指纹，embedding 相似度缓存能显著提高命中率，但要处理「相似但答案不同」的风险
+- Chroma 换成 server 模式向量库，补齐多副本与索引重建路径；限流升级为滑动窗口
+- 权限模型引入 workspace 与成员角色（owner / editor / viewer），审计扩展为全量写操作
+- 增加 Playwright 冒烟测试与前端组件测试
 
 ## License
 

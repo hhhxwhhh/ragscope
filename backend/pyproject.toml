@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ragscope-backend"
-version = "0.1.0"
+version = "0.5.0"
 description = "RAGScope backend: knowledge base Q&A with retrieval observability and evaluation"
 requires-python = ">=3.12"
 dependencies = [
@@ -36,6 +36,9 @@ dependencies = [
     "python-docx>=1.1",
     "numpy>=1.26",
     "certifi>=2024.0",
+    # Background worker. Optional at runtime (TASK_BACKEND=inline), installed by
+    # default so `pip install -e .` yields a deployable image.
+    "celery>=5.4",
 ]
 
 [project.optional-dependencies]
@@ -43,6 +46,15 @@ dependencies = [
 # seconds; production and local RAG runs install `.[rag]`.
 rag = [
     "sentence-transformers>=3.0",
+]
+# Tracing/metrics export. The service runs without these; installing them turns
+# OTEL_ENABLED into a real OTLP pipeline.
+observability = [
+    "opentelemetry-sdk>=1.25",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.25",
+    "opentelemetry-instrumentation-fastapi>=0.48b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.48b0",
+    "opentelemetry-instrumentation-redis>=0.48b0",
 ]
 # Offline helper for scanned PDFs: render pages and OCR them into a .txt that
 # the normal parser can ingest. Not used by the API runtime.

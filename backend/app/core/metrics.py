@@ -114,6 +114,12 @@ class Gauge(_Metric):
     def set(self, value: float) -> None:
         self.labels().set(value)
 
+    def inc(self, amount: float = 1.0) -> None:
+        self.labels().inc(amount)
+
+    def dec(self, amount: float = 1.0) -> None:
+        self.labels().inc(-amount)
+
     def value(self) -> float:
         return sum(self._values.values())
 

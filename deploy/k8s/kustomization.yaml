@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# kubectl apply -k deploy/k8s
+# Everything here is a reference topology: stateful dependencies (PostgreSQL,
+# Redis, object storage) are expected to be managed services in a real cluster,
+# so they are provided as a separate overlay for local clusters only.
+namespace: ragscope
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - api.yaml
+  - worker.yaml
+  - web.yaml
+  - ingress.yaml
+  - hpa.yaml
+
+images:
+  - name: ragscope/api
+    newTag: "0.5.0"
+  - name: ragscope/web
+    newTag: "0.5.0"
+
+configMapGenerator:
+  - name: ragscope-prometheus
+    files:
+      - prometheus.yml=../prometheus.yml
+    options:
+      disableNameSuffixHash: true

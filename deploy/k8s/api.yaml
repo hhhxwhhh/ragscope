@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ragscope-api
+  labels: { app: ragscope-api }
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  selector:
+    matchLabels: { app: ragscope-api }
+  template:
+    metadata:
+      labels: { app: ragscope-api }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      initContainers:
+        # Migrations run once per pod start; Alembic is idempotent and the
+        # advisory lock inside Alembic serialises concurrent pods.
+        - name: migrate
+          image: ragscope/api:0.5.0
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef: { name: ragscope-config }
+            - secretRef: { name: ragscope-secrets }
+          volumeMounts: []
+      containers:
+        - name: api
+          image: ragscope/api:0.5.0
+          command:
+            - uvicorn
+            - app.main:app
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8000"
+            - --proxy-headers
+            - --forwarded-allow-ips
+            - "*"
+          ports:
+            - { containerPort: 8000, name: http }
+          envFrom:
+            - configMapRef: { name: ragscope-config }
+            - secretRef: { name: ragscope-secrets }
+          resources:
+            requests: { cpu: "500m", memory: "1Gi" }
+            limits: { cpu: "2", memory: "4Gi" }
+          startupProbe:
+            httpGet: { path: /readyz, port: http }
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 20
+            timeoutSeconds: 3
+          lifecycle:
+            preStop:
+              # Give in-flight SSE streams a chance to finish before SIGTERM.
+              exec: { command: ["sh", "-c", "sleep 5"] }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: chroma, mountPath: /data/chroma }
+            - { name: storage, mountPath: /data/storage }
+            - { name: hf-cache, mountPath: /data/hf }
+      terminationGracePeriodSeconds: 45
+      volumes:
+        - name: chroma
+          persistentVolumeClaim: { claimName: ragscope-chroma }
+        - name: storage
+          persistentVolumeClaim: { claimName: ragscope-storage }
+        - name: hf-cache
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ragscope-api
+  labels: { app: ragscope-api }
+spec:
+  selector: { app: ragscope-api }
+  ports:
+    - { name: http, port: 8000, targetPort: http }
+---
+# Chroma is a local persistent index. A ReadWriteOnce volume therefore limits the
+# API to one replica on one node; move to a server-mode vector store (or rebuild
+# the index from Postgres) before scaling past that. Documented rather than hidden.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ragscope-chroma
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests: { storage: 20Gi }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ragscope-storage
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests: { storage: 50Gi }

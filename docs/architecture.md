@@ -271,11 +271,46 @@ embedding 在写事务外完成；SSE 流式期间不持有 session；评测执�
 | 检索缓存读写失败 | 按未命中处理，继续走真实检索 | 不失败；Redis 恢复后自动重新使用 |
 | Redis 不可用（鉴权） | 登录/刷新失败 | 恢复 Redis；鉴权不降级放行 |
 | Chroma 不可用 | readyz 503，检索报错 | 恢复后重试；/readyz 可被编排系统使用 |
+| 图扩展查询失败 | 记 warning，按无图候选继续 | 不失败，`graph_ms` 仍会记录 |
+| 图谱构建中重复触发 | Redis `SET NX` 返回 false，接口返回 `already_building` | 前端轮询直到构建结束 |
+| Celery broker 不可用 | 降级为进程内 BackgroundTask，并记录异常 | 上传不丢；恢复后自动回到 worker |
+| Celery worker 被杀 | `acks_late` 使任务重新入队；stale 回收兜底 | 文档不会永久卡在 parsing |
+| OTel exporter 不可用 | 启动时降级为「追踪关闭」并记日志 | 不影响请求；`span()` 变空操作 |
+| `/metrics` 被公网暴露 | 用 `METRICS_TOKEN` 要求 Bearer | 或只在集群内暴露该端口 |
+
+## v0.5 增量架构
+
+上面描述的是检索主链路；v0.5 在它周围加了六个子系统，设计说明见
+[docs/platform.md](platform.md)。这里只放一张「谁调用谁」的图：
+
+```text
+                     ┌──────────────────────────────┐
+  Web (Vue 3) ──────▶│  FastAPI                     │
+                     │  ├─ /chat[/stream]  SSE      │──▶ 单轮 RAG / 单 Agent / 深度研究
+                     │  ├─ /public/*       API Key  │──▶ retrieve() ──▶ 图扩展（1 跳）
+                     │  ├─ /mcp            JSON-RPC │──▶ 只读工具（同 retrieve）
+                     │  ├─ /api-keys       审计     │
+                     │  └─ /ops/summary    指标     │
+                     └───────┬───────────┬──────────┘
+                             │           │
+              Celery worker ◀┘           └▶ Prometheus scrape /metrics
+              (入库、评测)                   OTLP ──▶ Jaeger
+                             │
+                   Redis(broker/cache/limiter) · PostgreSQL · Chroma
+```
+
+四条边界值得记住：
+
+- **写操作只在 Web 端**：MCP 与 `/public/*` 都是只读，AI 或脚本不能删除语料。
+- **一个检索入口**：单轮、单 Agent、深度研究、MCP、public API 全部调用同一个
+  `retrieve()`，指标与 trace 口径一致。
+- **图只决定证据，不写答案**：三种问答模式的引用与拒答语义因此可比较。
+- **慢任务出进程**：Celery 承担入库与评测，API 进程只做请求内的工作。
 
 ## 扩展方向
 
-1. **多副本 API**：BackgroundTasks 换成外部队列；Chroma 换成独立服务；SSE 通过负载均衡的 sticky session 或独立网关。
+1. **多副本 API**：Celery 已经就绪；Chroma 换成独立服务；SSE 通过 sticky session 或专用网关。
 2. **更大语料**：BM25 全量进内存不现实，换 OpenSearch/Elasticsearch 或按 KB 分片；embedding 批处理与增量索引。
 3. **生成侧评测**：现有拒答 / 引用检查只是确定性代理；人工抽检队列已经补上，下一步是忠实度评估和 Prompt A/B 流量分配。仍然不建议直接用 LLM judge 当唯一标准，judge 需要用人工抽检结果校准。
-4. **多租户与权限**：团队、角色、审计日志；所有查询增加 tenant 维度。
-5. **可观测性**：结构化日志 + OpenTelemetry trace，把检索阶段耗时接到 APM。
+4. **多租户与权限**：workspace、成员角色、全量审计；所有查询增加 tenant 维度。
+5. **图能力**：社区聚类与社区摘要（GraphRAG 的上一层），实体消歧与跨文档共指。

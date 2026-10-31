@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ragscope-config
+data:
+  APP_ENV: "prod"
+  LOG_LEVEL: "INFO"
+  LOG_FORMAT: "json"
+  API_PREFIX: "/api/v1"
+  POSTGRES_HOST: "postgres.ragscope.svc.cluster.local"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "ragscope"
+  REDIS_HOST: "redis.ragscope.svc.cluster.local"
+  REDIS_PORT: "6379"
+  CORS_ORIGINS: "https://ragscope.example.com"
+  CHROMA_DIR: "/data/chroma"
+  STORAGE_DIR: "/data/storage"
+  HF_HOME: "/data/hf"
+  # Long-running work goes to the Celery worker, not the API process.
+  TASK_BACKEND: "celery"
+  CELERY_QUEUE: "ragscope"
+  # Traces/metrics
+  METRICS_ENABLED: "true"
+  OTEL_ENABLED: "true"
+  OTEL_EXPORTER_ENDPOINT: "otel-collector.observability.svc.cluster.local:4317"
+  OTEL_SAMPLE_RATIO: "0.1"
+  # Retrieval knobs that are safe to change per environment
+  GRAPH_RAG_ENABLED: "true"
+  GRAPH_EXTRA_TOP_K: "3"
+  DEEP_ENABLED: "true"
+  DEEP_MAX_ITERATIONS: "2"

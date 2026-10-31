@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ragscope-web
+  labels: { app: ragscope-web }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: ragscope-web }
+  template:
+    metadata:
+      labels: { app: ragscope-web }
+    spec:
+      containers:
+        - name: web
+          image: ragscope/web:0.5.0
+          ports:
+            - { containerPort: 80, name: http }
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits: { cpu: "500m", memory: "512Mi" }
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ragscope-web
+spec:
+  selector: { app: ragscope-web }
+  ports:
+    - { name: http, port: 80, targetPort: http }

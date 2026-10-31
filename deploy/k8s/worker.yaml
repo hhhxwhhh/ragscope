@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ragscope-worker
+  labels: { app: ragscope-worker }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: ragscope-worker }
+  template:
+    metadata:
+      labels: { app: ragscope-worker }
+    spec:
+      containers:
+        - name: worker
+          image: ragscope/api:0.5.0
+          command:
+            - celery
+            - -A
+            - app.workers.celery_app:celery_app
+            - worker
+            - --loglevel=INFO
+            - --concurrency=2
+            - -Q
+            - ragscope
+          envFrom:
+            - configMapRef: { name: ragscope-config }
+            - secretRef: { name: ragscope-secrets }
+          resources:
+            requests: { cpu: "1", memory: "2Gi" }
+            limits: { cpu: "4", memory: "8Gi" }
+          volumeMounts:
+            - { name: chroma, mountPath: /data/chroma }
+            - { name: storage, mountPath: /data/storage }
+            - { name: hf-cache, mountPath: /data/hf }
+      volumes:
+        - name: chroma
+          persistentVolumeClaim: { claimName: ragscope-chroma }
+        - name: storage
+          persistentVolumeClaim: { claimName: ragscope-storage }
+        - name: hf-cache
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ragscope-beat
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: beat
+              image: ragscope/api:0.5.0
+              # One-shot sweep instead of a long-lived beat process: a CronJob
+              # survives restarts, needs no leader election, and is observable
+              # through the Job history.
+              command:
+                - python
+                - -c
+                - |
+                  from app.workers.tasks import recover_stale_task
+                  print(recover_stale_task())
+              envFrom:
+                - configMapRef: { name: ragscope-config }
+                - secretRef: { name: ragscope-secrets }
