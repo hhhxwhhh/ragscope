@@ -405,7 +405,6 @@ def _build_result(
     state: DeepState, config: RetrievalConfig, usage: dict[str, int]
 ) -> AgentLoopResult:
     steps = [AgentStepRecord(**raw) for raw in state.get("steps") or []]
-    review = state.get("review") or {}
     searches = [
         {"query": step.arguments.get("query"), "status": step.status}
         for step in steps
@@ -416,7 +415,9 @@ def _build_result(
         steps=steps,
         tool_calls=sum(1 for step in steps if step.tool_name == "search_knowledge_base"),
         turns=len(steps),
-        stopped_reason=state.get("stopped_reason") or review.get("missing") or "unknown",
+        # Column is String(40): clamp defensively so a critic explanation can
+        # never fail the insert.
+        stopped_reason=str(state.get("stopped_reason") or "unknown")[:40],
         error=state.get("error"),
         latency_ms=0,
         token_usage=usage or None,
