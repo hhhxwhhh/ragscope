@@ -99,6 +99,10 @@ class Settings(BaseSettings):
     agent_temperature: float = 0.1
     agent_decision_max_tokens: int = 512
 
+    # Deep research (planner / researcher / critic graph)
+    deep_enabled: bool = True
+    deep_max_iterations: int = 2
+
     # Public (API key) surface
     public_rate_limit_per_minute: int = 60
 

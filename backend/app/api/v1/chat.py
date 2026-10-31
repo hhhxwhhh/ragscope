@@ -17,6 +17,7 @@ from app.core.errors import ServiceUnavailableError
 from app.db.session import SessionLocal, get_db
 from app.models.knowledge_base import KnowledgeBase
 from app.models.user import User
+from app.rag.agent.graph import DeepEvent, stream_deep
 from app.rag.agent.loop import AgentLoopResult, AgentStepRecord, stream_agent
 from app.rag.answer import stream_answer
 from app.rag.llm import get_chat_model
@@ -55,8 +56,14 @@ def _merge_usage(total: dict[str, Any], usage: Any) -> None:
 
 
 def _resolve_mode(requested: str, question: str) -> tuple[RouteMode, str | None]:
-    """Resolve explicit modes and turn auto mode into a concrete path."""
+    """Resolve explicit modes and turn auto mode into a concrete path.
+
+    ``deep`` is never chosen automatically: it costs several model calls, so it
+    stays an explicit opt-in. Auto mode only ever promotes to the single agent.
+    """
     if requested != "auto":
+        if requested == "deep" and not get_settings().deep_enabled:
+            return "agent", "深度研究未启用，回退到 Agent 模式"
         return cast(RouteMode, requested), None
     decision = choose_mode(question)
     if decision.mode == "agent" and not get_settings().agent_enabled:
@@ -75,10 +82,15 @@ async def chat(
 ) -> ChatResponse:
     kb = await kb_service.get_owned_kb(db, kb_id, current_user.id)
     mode, routing_reason = _resolve_mode(payload.mode, payload.question)
-    if mode == "agent":
+    if mode in {"agent", "deep"}:
         if not get_settings().agent_enabled:
             raise ServiceUnavailableError("Agent 模式未启用")
-        conversation, bundle = await agent_service.answer_agent_once(
+        runner = (
+            agent_service.answer_deep_once
+            if mode == "deep"
+            else agent_service.answer_agent_once
+        )
+        conversation, bundle = await runner(
             db,
             kb,
             current_user.id,
@@ -115,7 +127,7 @@ async def chat_stream(
     # generator holds no database session while tokens are being produced.
     requested_mode = payload.mode
     mode, routing_reason = _resolve_mode(requested_mode, payload.question)
-    if mode == "agent":
+    if mode in {"agent", "deep"}:
         if not get_settings().agent_enabled:
             raise ServiceUnavailableError("Agent 模式未启用")
         # Resolve the model before persisting the user turn so a missing key
@@ -133,6 +145,8 @@ async def chat_stream(
                 turn,
                 requested_mode=requested_mode,
                 routing_reason=routing_reason,
+                mode=mode,
+                deep=mode == "deep",
             ),
             media_type="text/event-stream",
             headers=SSE_HEADERS,
@@ -162,6 +176,8 @@ async def _agent_event_stream(
     *,
     requested_mode: str = "agent",
     routing_reason: str | None = None,
+    mode: str = "agent",
+    deep: bool = False,
 ) -> AsyncIterator[str]:
     """Stream a bounded agent run: planning steps, trace, then the grounded answer.
 
@@ -177,7 +193,7 @@ async def _agent_event_stream(
         {
             "conversation_id": str(turn.conversation_id),
             "user_message_id": str(turn.user_message_id),
-            "mode": "agent",
+            "mode": mode,
             "requested_mode": requested_mode,
             "routing_reason": routing_reason,
             "prompt_variant": turn.prompt_variant,
@@ -195,15 +211,22 @@ async def _agent_event_stream(
             if kb is None:
                 yield _sse("error", {"detail": "知识库不存在"})
                 return
-            async for event in stream_agent(
-                db,
-                kb,
-                turn.question,
-                turn.history,
-                turn.config,
-                settings,
-            ):
-                if event.type == "step" and event.step is not None:
+            source = (
+                stream_deep(db, kb, turn.question, turn.history, turn.config, settings)
+                if deep
+                else stream_agent(db, kb, turn.question, turn.history, turn.config, settings)
+            )
+            async for event in source:
+                if event.type == "plan":
+                    plan = cast(DeepEvent, event)
+                    yield _sse(
+                        "plan",
+                        {
+                            "sub_questions": plan.plan or [],
+                            "review": plan.review,
+                        },
+                    )
+                elif event.type == "step" and event.step is not None:
                     steps.append(event.step)
                     yield _sse("agent_step", event.step.to_dict())
                 elif event.type == "result":
@@ -238,7 +261,7 @@ async def _agent_event_stream(
         return
 
     yield _sse("retrieval", result.to_trace(turn.question))
-    metrics.observe_agent_run("agent", len(result.steps), result.stopped_reason)
+    metrics.observe_agent_run(mode, len(result.steps), result.stopped_reason)
 
     if not result.evidence:
         latency_ms = int((time.perf_counter() - started) * 1000)
@@ -251,7 +274,7 @@ async def _agent_event_stream(
             latency_ms=latency_ms,
         )
         yield _sse("token", {"delta": chat_service.REFUSAL_MESSAGE})
-        yield _sse("done", _done_payload(turn, bundle, latency_ms))
+        yield _sse("done", _done_payload(turn, bundle, latency_ms, mode))
         return
 
     parts: list[str] = []
@@ -308,14 +331,19 @@ async def _agent_event_stream(
         latency_ms=latency_ms,
         usage=usage or None,
     )
-    yield _sse("done", _done_payload(turn, bundle, latency_ms))
+    yield _sse("done", _done_payload(turn, bundle, latency_ms, mode))
 
 
-def _done_payload(turn: agent_service.AgentTurn, bundle: Any, latency_ms: int) -> dict[str, Any]:
+def _done_payload(
+    turn: agent_service.AgentTurn,
+    bundle: Any,
+    latency_ms: int,
+    mode: str = "agent",
+) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "conversation_id": str(turn.conversation_id),
         "status": "completed",
-        "mode": "agent",
+        "mode": mode,
         "latency_ms": latency_ms,
     }
     if bundle is not None:

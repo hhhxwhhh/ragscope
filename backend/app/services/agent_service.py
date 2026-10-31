@@ -14,6 +14,7 @@ from app.db.session import SessionLocal
 from app.models.conversation import Conversation
 from app.models.knowledge_base import KnowledgeBase
 from app.models.message import Message, MessageRole, MessageStatus
+from app.rag.agent.graph import stream_deep
 from app.rag.agent.loop import AgentLoopResult, AgentStepRecord, stream_agent
 from app.rag.answer import complete_answer
 from app.rag.llm import get_chat_model
@@ -143,8 +144,14 @@ async def answer_agent_once(
     conversation_id: UUID | None,
     *,
     prompt_variant: str = "grounded",
+    deep: bool = False,
 ) -> tuple[Conversation, chat_service.MessageBundle]:
-    """Non-streaming agent path used by the JSON endpoint and tests."""
+    """Non-streaming agent path used by the JSON endpoint and tests.
+
+    ``deep`` swaps the single-agent loop for the planner/researcher/critic graph.
+    Both produce the same ``AgentLoopResult``, so persistence, traces and the
+    citation pipeline downstream are unchanged.
+    """
     started = time.perf_counter()
     settings = get_settings()
     get_chat_model()
@@ -163,15 +170,14 @@ async def answer_agent_once(
     )
     await db.flush()
 
+    config = RetrievalConfig.from_kb(kb)
+    source = (
+        stream_deep(db, kb, question, history, config, settings)
+        if deep
+        else stream_agent(db, kb, question, history, config, settings)
+    )
     result: AgentLoopResult | None = None
-    async for event in stream_agent(
-        db,
-        kb,
-        question,
-        history,
-        RetrievalConfig.from_kb(kb),
-        settings,
-    ):
+    async for event in source:
         if event.type == "result":
             result = event.result
 
@@ -207,3 +213,24 @@ async def answer_agent_once(
     )
     await db.flush()
     return conversation, bundle
+
+
+async def answer_deep_once(
+    db: AsyncSession,
+    kb: KnowledgeBase,
+    user_id: UUID,
+    question: str,
+    conversation_id: UUID | None,
+    *,
+    prompt_variant: str = "grounded",
+) -> tuple[Conversation, chat_service.MessageBundle]:
+    """Deep research variant of the non-streaming endpoint."""
+    return await answer_agent_once(
+        db,
+        kb,
+        user_id,
+        question,
+        conversation_id,
+        prompt_variant=prompt_variant,
+        deep=True,
+    )

@@ -132,7 +132,7 @@ class ChatRequest(BaseModel):
     # tool-calling loop and then generates from the collected evidence.
     # "auto" picks between them with a cheap rule-based router, so simple
     # questions keep the low-latency path and multi-hop questions get tools.
-    mode: Literal["rag", "agent", "auto"] = "rag"
+    mode: Literal["rag", "agent", "deep", "auto"] = "rag"
     # Versioned grounded-answer prompt. Applied to the final answer on both the
     # RAG and Agent paths; agent planning has its own fixed system prompt.
     prompt_variant: str = DEFAULT_PROMPT_VARIANT
@@ -153,6 +153,6 @@ class ChatResponse(BaseModel):
     conversation_id: UUID
     message: MessageOut
     # The path actually used. Useful when the caller asked for "auto".
-    mode: Literal["rag", "agent"] | None = None
+    mode: Literal["rag", "agent", "deep"] | None = None
     routing_reason: str | None = None
     prompt_variant: str = DEFAULT_PROMPT_VARIANT

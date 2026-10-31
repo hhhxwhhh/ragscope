@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-RouteMode = Literal["rag", "agent"]
+RouteMode = Literal["rag", "agent", "deep"]
 
 # "X2 和 X1 有什么区别", "哪个型号防水", "分别支持什么协议"
 _COMPARISON = re.compile(r"对比|比较|区别|差异|不同|哪个|分别|各自|vs\.?", re.IGNORECASE)
