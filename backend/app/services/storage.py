@@ -67,3 +67,20 @@ def remove_stored_file(path: str) -> None:
     except (OSError, ValueError):
         return
     target.unlink(missing_ok=True)
+
+
+def save_text(kb_id: UUID, document_id: UUID, filename: str, text: str) -> tuple[Path, int, str]:
+    """Persist connector output as a UTF-8 markdown file.
+
+    Connectors and uploads go through the same ``storage_root``/sha256 contract,
+    so the ingestion pipeline does not care where a document came from — it only
+    sees a path on disk.
+    """
+    safe = sanitize_filename(filename)
+    if not safe.lower().endswith((".md", ".txt")):
+        safe = f"{safe}.md"
+    target = storage_root() / str(kb_id) / f"{document_id}{Path(safe).suffix.lower()}"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    payload = text.encode("utf-8")
+    target.write_bytes(payload)
+    return target, len(payload), hashlib.sha256(payload).hexdigest()

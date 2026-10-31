@@ -52,6 +52,8 @@ from app.main import app  # noqa: E402
 settings = get_settings()
 
 TABLES = (
+    "sync_runs",
+    "data_sources",
     "chunk_entities",
     "graph_relations",
     "graph_entities",

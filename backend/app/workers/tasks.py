@@ -26,7 +26,7 @@ configure_env()
 
 from app.db.redis import close_redis  # noqa: E402
 from app.db.session import SessionLocal, engine  # noqa: E402
-from app.services import eval_service  # noqa: E402
+from app.services import eval_service, source_service  # noqa: E402
 from app.services.ingestion import recover_stale_documents  # noqa: E402
 from app.workers.celery_app import celery_app  # noqa: E402
 from app.workers.ingestion import run_ingestion  # noqa: E402
@@ -62,6 +62,20 @@ def ingest_document_task(self, document_id: str) -> dict[str, Any]:
 def run_evaluation_task(self, run_id: str) -> dict[str, Any]:
     asyncio.run(_run_isolated(eval_service.execute_run, UUID(run_id)))
     return {"run_id": run_id, "status": "done"}
+
+
+@celery_app.task(name="ragscope.sync_run", bind=True, max_retries=0)
+def sync_run_task(self, run_id: str) -> dict[str, Any]:
+    """Execute one data-source sync (crawl + diff + re-ingest)."""
+    asyncio.run(_run_isolated(source_service.execute_run, UUID(run_id)))
+    return {"run_id": run_id, "status": "done"}
+
+
+@celery_app.task(name="ragscope.sync_due")
+def sync_due_task() -> dict[str, int]:
+    """Beat entry point: start every source whose schedule is due."""
+    dispatched = asyncio.run(_run_isolated(source_service.sync_due_sources))
+    return {"dispatched": int(dispatched or 0)}
 
 
 @celery_app.task(name="ragscope.recover_stale")

@@ -18,6 +18,7 @@ from app.api.v1 import (
     public,
     retrieval,
     reviews,
+    sources,
 )
 
 api_router = APIRouter()
@@ -38,3 +39,4 @@ api_router.include_router(api_keys.router)
 api_router.include_router(public.router)
 api_router.include_router(mcp.router)
 api_router.include_router(graph.router)
+api_router.include_router(sources.router)

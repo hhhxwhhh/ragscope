@@ -55,6 +55,12 @@ celery_app.conf.update(
         "recover-stale-work": {
             "task": "ragscope.recover_stale",
             "schedule": 300.0,
+        },
+        # Source freshness is expressed in minutes, so a 60s tick keeps the
+        # scheduling error bounded without polling the database hard.
+        "sync-due-sources": {
+            "task": "ragscope.sync_due",
+            "schedule": 60.0,
         }
     },
 )

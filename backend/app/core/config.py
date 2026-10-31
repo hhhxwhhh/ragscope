@@ -109,6 +109,13 @@ class Settings(BaseSettings):
     deep_enabled: bool = True
     deep_max_iterations: int = 2
 
+    # Connectors / scheduled sync
+    sync_enabled: bool = True
+    sync_scheduler_interval_seconds: int = 120
+    sync_max_items_per_run: int = 50
+    sync_max_document_chars: int = 200_000
+    github_token: str = ""
+
     # Background tasks
     task_backend: str = "inline"  # inline | celery
     celery_queue: str = "ragscope"

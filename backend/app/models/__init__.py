@@ -16,6 +16,7 @@ from app.models.knowledge_base import KnowledgeBase
 from app.models.message import Message, MessageRole, MessageStatus
 from app.models.retrieval_trace import RetrievalTrace
 from app.models.review import AnswerReview, ReviewVerdict
+from app.models.source import DataSource, SyncRun
 from app.models.user import User
 
 __all__ = [
@@ -41,7 +42,9 @@ __all__ = [
     "Message",
     "MessageRole",
     "MessageStatus",
+    "DataSource",
     "RetrievalTrace",
+    "SyncRun",
     "ReviewVerdict",
     "User",
 ]

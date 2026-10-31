@@ -20,6 +20,7 @@ from app.core.logging import configure_logging, request_id_var, trace_id_var  # 
 from app.core.tracing import configure_tracing, current_trace_id  # noqa: E402
 from app.db.redis import close_redis  # noqa: E402
 from app.db.session import SessionLocal, engine  # noqa: E402
+from app.services import scheduler  # noqa: E402
 from app.services.eval_service import recover_stale_runs  # noqa: E402
 from app.services.ingestion import recover_stale_documents  # noqa: E402
 
@@ -57,7 +58,11 @@ async def lifespan(app: FastAPI):
             await db.rollback()
             logger.exception("failed to recover stale eval runs at startup")
 
+    scheduler.start()
+
     yield
+
+    await scheduler.stop()
     await close_redis()
     await engine.dispose()
 
