@@ -177,6 +177,7 @@ Agent 路径用 `langchain.agents.create_agent` 编译一张 LangGraph ReAct 状
 | 协议 | MCP（JSON-RPC 2.0，2025-06-18 版本协商）、OpenAI 兼容接口、SSE、REST |
 | 可观测 | Prometheus 指标（自研暴露层）、OpenTelemetry + OTLP/Jaeger、结构化 JSON 日志 |
 | 异步 | Celery 5 + Redis broker、`acks_late`、CronJob/beat 级 stale 回收 |
+| 数据采集 | httpx 异步抓取、robots.txt + 限速、标准库 HTMLParser 的 readability-lite、feedparser、GitHub contents API |
 | 前端 | Vue 3 + TypeScript + Vite、Element Plus、Pinia、Vue Router、ECharts（折线 + 力导向图）、markdown-it + DOMPurify |
 | 测试 | pytest + pytest-asyncio、httpx ASGITransport、真实 PostgreSQL/Redis、fake retriever |
 | 基础设施 | 多阶段 Dockerfile、Docker Compose（api / worker / beat / prometheus / jaeger）、Nginx（SSE 不缓冲）、K8s 清单（Deployment / HPA / PDB / Ingress / CronJob）、Alembic、ruff、pre-commit、GitHub Actions、Locust |
@@ -200,7 +201,8 @@ rag_learn/
 │   │   │                    # + graph 多智能体)
 │   │   ├── schemas/         # Pydantic 请求/响应
 │   │   ├── services/        # 入库、检索、会话、反馈、抽检、评测、看板、
-│   │   │                    # API Key/审计、图谱
+│   │   │                    # API Key/审计、图谱、数据源与同步、用量、Webhook
+│   │   │   └── sources/     # web / sitemap / rss / github 连接器 + HTML 抽取
 │   │   └── workers/         # 入库后台任务、celery_app、tasks、dispatch
 │   ├── alembic/versions/
 │   ├── scripts/
@@ -218,7 +220,8 @@ rag_learn/
 │   │                        # EvalRun, EvalCompare
 │   └── types/
 ├── data/                    # 5 篇虚构的星河科技产品文档
-├── docs/                    # 应用场景、架构、评测设计、MCP、平台层、面试手册
+├── docs/                    # 应用场景、架构、评测设计、MCP、平台层、
+│                            # 数据源同步、语义缓存、面试手册
 ├── notebooks/learning/      # 最开始的手写 RAG notebook
 ├── deploy/
 │   ├── nginx.conf           # SPA + /api 代理 + SSE 不缓冲
