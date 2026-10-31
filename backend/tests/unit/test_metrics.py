@@ -16,9 +16,15 @@ def test_counter_and_histogram_render_valid_exposition_text():
     text = metrics.render()
 
     assert "# TYPE ragscope_http_requests_total counter" in text
-    assert 'ragscope_http_requests_total{method="GET",route="/unit-test/{id}",status="200"} 1' in text
+    expected_counter = (
+        'ragscope_http_requests_total{method="GET",route="/unit-test/{id}",status="200"} 1'
+    )
+    assert expected_counter in text
     assert "# TYPE ragscope_http_request_duration_seconds histogram" in text
-    assert 'ragscope_http_request_duration_seconds_bucket{method="GET",route="/unit-test/{id}",le="+Inf"}' in text
+    assert (
+        'ragscope_http_request_duration_seconds_bucket'
+        '{method="GET",route="/unit-test/{id}",le="+Inf"}'
+    ) in text
 
 
 def test_labels_are_isolated_per_key():

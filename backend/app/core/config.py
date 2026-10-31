@@ -99,6 +99,9 @@ class Settings(BaseSettings):
     agent_temperature: float = 0.1
     agent_decision_max_tokens: int = 512
 
+    # Public (API key) surface
+    public_rate_limit_per_minute: int = 60
+
     # Storage
     chroma_dir: str = str(BACKEND_DIR / "data" / "chroma")
     storage_dir: str = str(BACKEND_DIR / "data" / "storage")

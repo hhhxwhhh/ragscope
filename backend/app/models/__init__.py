@@ -1,4 +1,5 @@
 from app.models.agent import AgentRun, AgentStep
+from app.models.api_key import ApiKey, AuditLog
 from app.models.chunk import Chunk
 from app.models.citation import Citation
 from app.models.conversation import Conversation
@@ -19,6 +20,8 @@ from app.models.user import User
 __all__ = [
     "AgentRun",
     "AgentStep",
+    "ApiKey",
+    "AuditLog",
     "AnswerReview",
     "Chunk",
     "Citation",

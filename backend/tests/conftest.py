@@ -52,6 +52,8 @@ from app.main import app  # noqa: E402
 settings = get_settings()
 
 TABLES = (
+    "audit_logs",
+    "api_keys",
     "agent_steps",
     "agent_runs",
     "answer_reviews",

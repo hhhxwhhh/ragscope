@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    api_keys,
     auth,
     chat,
     conversations,
@@ -12,6 +13,7 @@ from app.api.v1 import (
     kbs,
     ops,
     prompts,
+    public,
     retrieval,
     reviews,
 )
@@ -30,3 +32,5 @@ api_router.include_router(eval.router)
 api_router.include_router(reviews.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(ops.router)
+api_router.include_router(api_keys.router)
+api_router.include_router(public.router)
