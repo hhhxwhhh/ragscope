@@ -11,6 +11,7 @@ import { Refresh, UploadFilled } from '@element-plus/icons-vue'
 import EvalPanel from '@/components/EvalPanel.vue'
 import RetrievalDebugPanel from '@/components/RetrievalDebugPanel.vue'
 import ReviewQueuePanel from '@/components/ReviewQueuePanel.vue'
+import SourcesPanel from '@/components/SourcesPanel.vue'
 import { getKb } from '@/api/kb'
 import {
   deleteDocument,
@@ -25,7 +26,7 @@ const props = defineProps<{ id: string }>()
 const route = useRoute()
 const router = useRouter()
 
-const TABS = ['documents', 'debug', 'eval', 'reviews']
+const TABS = ['documents', 'sources', 'debug', 'eval', 'reviews']
 
 function tabFromQuery(): string {
   const tab = route.query.tab
@@ -318,6 +319,10 @@ onUnmounted(stopPolling)
             v-if="!loading && !documents.length"
             description="还没有文档，上传一篇 Markdown、TXT、PDF 或 DOCX 开始"
           />
+        </el-tab-pane>
+
+        <el-tab-pane label="数据源" name="sources" lazy>
+          <SourcesPanel :kb-id="id" />
         </el-tab-pane>
 
         <el-tab-pane label="检索调试" name="debug" lazy>

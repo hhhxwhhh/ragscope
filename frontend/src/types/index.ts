@@ -569,3 +569,51 @@ export interface OpsSnapshot {
   eval: { runs_total: number }
   tasks: { backend: string; queue: string; inline_tasks: string[]; queue_depth: number | null }
 }
+
+
+// --- Data sources -----------------------------------------------------------
+
+export type SourceType = 'web' | 'sitemap' | 'rss' | 'github'
+
+export interface DataSourceItem {
+  id: string
+  kb_id: string
+  name: string
+  source_type: SourceType
+  config: Record<string, unknown>
+  schedule_minutes: number
+  enabled: boolean
+  last_run_at: string | null
+  next_run_at: string | null
+  last_status: 'idle' | 'running' | 'success' | 'partial' | 'failed'
+  last_error: string | null
+  created_at: string
+}
+
+export interface SyncRunStats {
+  added?: number
+  updated?: number
+  unchanged?: number
+  failed?: number
+  skipped?: number
+  pages_fetched?: number
+  duration_ms?: number
+  errors?: { url: string; error: string }[]
+}
+
+export interface SyncRunItem {
+  id: string
+  source_id: string
+  status: 'running' | 'success' | 'partial' | 'failed'
+  trigger: string
+  stats: SyncRunStats
+  error: string | null
+  started_at: string
+  finished_at: string | null
+}
+
+export interface SourcePreview {
+  items: { title: string; url: string; chars: number; preview: string }[]
+  errors: { url: string; error: string }[]
+  pages_fetched: number
+}
