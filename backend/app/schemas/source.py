@@ -24,6 +24,8 @@ class WebConfig(BaseModel):
     exclude_patterns: list[str] = Field(default_factory=list, max_length=10)
     request_delay_seconds: float = Field(default=0.8, ge=0, le=10)
     respect_robots: bool = True
+    # Escape hatch for corporate TLS-inspecting proxies; off by default.
+    verify_tls: bool = True
     user_agent: str | None = Field(default=None, max_length=200)
 
 
@@ -33,12 +35,14 @@ class SitemapConfig(BaseModel):
     include_patterns: list[str] = Field(default_factory=list, max_length=10)
     request_delay_seconds: float = Field(default=0.5, ge=0, le=10)
     respect_robots: bool = True
+    verify_tls: bool = True
     user_agent: str | None = Field(default=None, max_length=200)
 
 
 class RssConfig(BaseModel):
     feed_url: str
     max_items: int = Field(default=20, ge=1, le=100)
+    verify_tls: bool = True
     user_agent: str | None = Field(default=None, max_length=200)
 
 
@@ -48,6 +52,7 @@ class GithubConfig(BaseModel):
     ref: str | None = Field(default=None, max_length=100)
     glob: list[str] = Field(default_factory=lambda: ["*.md", "*.mdx", "*.txt", "*.rst"])
     max_files: int = Field(default=30, ge=1, le=100)
+    verify_tls: bool = True
 
 
 CONFIG_MODELS: dict[str, type[BaseModel]] = {

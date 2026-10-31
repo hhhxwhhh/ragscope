@@ -7,6 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user
+from app.core.errors import BadRequestError
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.source import (
@@ -16,6 +17,7 @@ from app.schemas.source import (
     SourcePreviewRequest,
     SourceUpdate,
     SyncRunOut,
+    validate_config,
 )
 from app.services import audit_service, kb_service, source_service
 
@@ -80,7 +82,11 @@ async def preview_source(
     adds nothing.
     """
     await kb_service.get_owned_kb(db, kb_id, current_user.id)
-    result = await source_service.preview(payload.source_type, payload.config, limit=5)
+    try:
+        config = validate_config(payload.source_type, payload.config)
+    except ValueError as exc:
+        raise BadRequestError(str(exc)) from exc
+    result = await source_service.preview(payload.source_type, config, limit=5)
     return SourcePreviewOut(**result)
 
 

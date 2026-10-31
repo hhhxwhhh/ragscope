@@ -88,6 +88,9 @@ existing = documents where (kb_id, external_url) == (kb, item.external_id)
 - **边界**：`max_pages ≤ 200`、`max_depth ≤ 3`，单次同步最多 `SYNC_MAX_ITEMS_PER_RUN`
   条（默认 50）。
 - **只抓正文**：不下载二进制、不执行 JS、不跟随外域链接。
+- **TLS**：默认显式使用 certifi 的 CA bundle（Windows/企业代理下比依赖系统证书更稳定）。
+  如果所在网络做了 TLS 解密且根证书不在 bundle 里，可在连接器配置里设 `verify_tls: false`；
+  这是最后手段，会关闭证书校验，只应在受控内网使用。
 - **合规责任在配置者**：只应抓取你有权使用的内容，并遵守目标站点的服务条款。这个模块提供
   的是「可控」的抓取，不是「可以随便抓」。
 

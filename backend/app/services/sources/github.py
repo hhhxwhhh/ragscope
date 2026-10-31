@@ -26,7 +26,7 @@ from typing import Any
 import httpx
 
 from app.core.config import get_settings
-from app.services.sources.base import Fetcher, FetchOutcome, SourceItem
+from app.services.sources.base import Fetcher, FetchOutcome, SourceItem, ca_bundle
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,12 @@ class GithubFetcher(Fetcher):
             headers["Authorization"] = f"Bearer {token}"
 
         outcome = FetchOutcome()
-        async with httpx.AsyncClient(timeout=30, headers=headers, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            timeout=30,
+            headers=headers,
+            follow_redirects=True,
+            verify=ca_bundle() if config.get("verify_tls", True) else False,
+        ) as client:
             await self._walk(client, repo, path, ref, patterns, max_files, outcome, depth=0)
         return outcome
 

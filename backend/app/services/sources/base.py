@@ -11,6 +11,20 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+import certifi
+
+
+def ca_bundle() -> str:
+    """Path to a CA bundle that works behind corporate TLS-inspecting proxies.
+
+    Windows/company networks often re-sign TLS with a private root. httpx falls
+    back to the OS store only when ``certifi`` is missing, and the default
+    ``certifi`` bundle then rejects the proxy's chain. Pointing explicitly at
+    certifi keeps behaviour identical across machines, and operators can override
+    by setting ``SSL_CERT_FILE`` (httpx honours it).
+    """
+    return certifi.where()
+
 
 @dataclass
 class SourceItem:

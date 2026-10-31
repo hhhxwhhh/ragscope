@@ -26,7 +26,7 @@ from urllib.parse import urljoin, urlsplit
 import feedparser
 import httpx
 
-from app.services.sources.base import Fetcher, FetchOutcome, SourceItem
+from app.services.sources.base import Fetcher, FetchOutcome, SourceItem, ca_bundle
 from app.services.sources.html_extract import (
     extract,
     is_crawlable,
@@ -41,10 +41,13 @@ MAX_PAGES_HARD_LIMIT = 200
 MIN_CONTENT_CHARS = 80
 
 
-def _client(user_agent: str = DEFAULT_UA, timeout: float = 20.0) -> httpx.AsyncClient:
+def _client(
+    user_agent: str = DEFAULT_UA, timeout: float = 20.0, verify_tls: bool = True
+) -> httpx.AsyncClient:
     return httpx.AsyncClient(
         timeout=timeout,
         follow_redirects=True,
+        verify=ca_bundle() if verify_tls else False,
         headers={
             "User-Agent": user_agent,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -87,7 +90,10 @@ class WebFetcher(Fetcher):
         seen: set[str] = set()
         queue: deque[tuple[str, int]] = deque((url, 0) for url in start_urls)
 
-        async with _client(config.get("user_agent") or DEFAULT_UA) as client:
+        async with _client(
+            config.get("user_agent") or DEFAULT_UA,
+            verify_tls=bool(config.get("verify_tls", True)),
+        ) as client:
             robots = RobotsCache(client, config.get("user_agent") or DEFAULT_UA)
 
             while queue and len(outcome.items) < max_pages:
@@ -160,7 +166,10 @@ class SitemapFetcher(Fetcher):
         delay = float(config.get("request_delay_seconds") or 0.5)
         outcome = FetchOutcome()
 
-        async with _client(config.get("user_agent") or DEFAULT_UA) as client:
+        async with _client(
+            config.get("user_agent") or DEFAULT_UA,
+            verify_tls=bool(config.get("verify_tls", True)),
+        ) as client:
             urls = await _read_sitemap(client, sitemap_url, outcome)
             if config.get("include_patterns"):
                 urls = [url for url in urls if _matches_filters(url, config)]
@@ -256,7 +265,10 @@ class RssFetcher(Fetcher):
         max_items = min(int(config.get("max_items") or 20), 100)
         outcome = FetchOutcome()
 
-        async with _client(config.get("user_agent") or DEFAULT_UA) as client:
+        async with _client(
+            config.get("user_agent") or DEFAULT_UA,
+            verify_tls=bool(config.get("verify_tls", True)),
+        ) as client:
             try:
                 response = await client.get(feed_url)
                 response.raise_for_status()
