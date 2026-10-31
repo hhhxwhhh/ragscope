@@ -52,6 +52,9 @@ from app.main import app  # noqa: E402
 settings = get_settings()
 
 TABLES = (
+    "chunk_entities",
+    "graph_relations",
+    "graph_entities",
     "audit_logs",
     "api_keys",
     "agent_steps",

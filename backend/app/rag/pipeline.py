@@ -48,6 +48,8 @@ class RetrievalConfig:
     multi_query_count: int = 3
     multi_query_timeout_seconds: float = 8.0
     use_cache: bool = True
+    use_graph: bool = True
+    graph_extra_top_k: int = 3
 
     @classmethod
     def from_kb(cls, kb: KnowledgeBase) -> "RetrievalConfig":
@@ -86,6 +88,10 @@ class RetrievalConfig:
                 30.0,
             ),
             use_cache=_clamp_bool(raw, "use_cache", settings.retrieval_cache_enabled),
+            use_graph=_clamp_bool(raw, "use_graph", settings.graph_rag_enabled),
+            graph_extra_top_k=_clamp_int(
+                raw, "graph_extra_top_k", settings.graph_extra_top_k, 0, 10
+            ),
         )
 
 
@@ -141,6 +147,8 @@ def _trace_candidate(candidate: dict[str, Any], content_chars: int = 400) -> dic
         "fused_score",
         "rerank_score",
         "matched_queries",
+        "graph_score",
+        "graph_via",
     )
     payload = {key: candidate.get(key) for key in keys}
     payload["content"] = (candidate.get("content") or "")[:content_chars]
@@ -245,6 +253,7 @@ async def _retrieve(
         "bm25_ms": 0.0,
         "fusion_ms": 0.0,
         "rerank_ms": 0.0,
+        "graph_ms": 0.0,
     }
 
     # 1. Rewrite the query using conversation history (multi-turn only).
@@ -410,6 +419,34 @@ async def _retrieve(
                 reverse=True,
             )[: config.final_top_k]
     timings["rerank_ms"] = _ms(started)
+
+    # 8. Optional one-hop graph expansion. New chunks are appended after the
+    # reranked list (never reordered into it): the cross-encoder judged those
+    # chunks directly, while a graph neighbour is inferred evidence and should
+    # stay visibly secondary in the final context.
+    graph_payload: dict[str, Any] = {"matched_entities": [], "added": 0}
+    graph_candidates: list[dict[str, Any]] = []
+    if config.use_graph and config.graph_extra_top_k > 0 and final_candidates:
+        started = time.perf_counter()
+        from app.services import graph_service
+
+        try:
+            graph_candidates, graph_payload = await graph_service.expand(
+                db,
+                kb,
+                rewritten,
+                [str(candidate["chunk_id"]) for candidate in final_candidates],
+                limit=config.graph_extra_top_k,
+            )
+        except Exception as exc:
+            logger.warning("graph expansion failed kb=%s: %s", kb.id, exc)
+            graph_payload = {"matched_entities": [], "added": 0, "error": str(exc)}
+        if graph_candidates:
+            final_candidates = (final_candidates + graph_candidates)[
+                : config.final_top_k + config.graph_extra_top_k
+            ]
+        timings["graph_ms"] = _ms(started)
+
     timings["total_ms"] = _ms(total_started)
 
     for candidate in candidates.values():
@@ -428,11 +465,13 @@ async def _retrieve(
         "rerank_error": rerank_error,
         "config": asdict(config),
         "stage_timings": timings,
+        "graph": graph_payload,
         "counts": {
             "vector": len(vector_trace),
             "bm25": len(bm25_trace),
             "fused": len(fused),
             "final": len(final_candidates),
+            "graph": len(graph_candidates),
             "queries": len(queries),
             "vector_hits": vector_hits_total,
             "bm25_hits": bm25_hits_total,
@@ -442,6 +481,7 @@ async def _retrieve(
             "bm25": bm25_trace,
             "fused": [_trace_candidate(candidate) for candidate in fused_candidates],
             "final": [_trace_candidate(candidate) for candidate in final_candidates],
+            "graph": [_trace_candidate(candidate) for candidate in graph_candidates],
         },
     }
 

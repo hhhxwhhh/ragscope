@@ -11,6 +11,7 @@ from app.models.evaluation import (
     EvalRun,
     EvalRunStatus,
 )
+from app.models.graph import ChunkEntity, GraphEntity, GraphRelation
 from app.models.knowledge_base import KnowledgeBase
 from app.models.message import Message, MessageRole, MessageStatus
 from app.models.retrieval_trace import RetrievalTrace
@@ -24,6 +25,7 @@ __all__ = [
     "AuditLog",
     "AnswerReview",
     "Chunk",
+    "ChunkEntity",
     "Citation",
     "Conversation",
     "Document",
@@ -32,6 +34,8 @@ __all__ = [
     "EvalDataset",
     "EvalResult",
     "EvalRun",
+    "GraphEntity",
+    "GraphRelation",
     "EvalRunStatus",
     "KnowledgeBase",
     "Message",

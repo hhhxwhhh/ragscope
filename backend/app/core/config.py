@@ -81,6 +81,12 @@ class Settings(BaseSettings):
     multi_query_timeout_seconds: float = 8.0
     retrieval_cache_enabled: bool = True
     retrieval_cache_ttl_seconds: int = 300
+    # GraphRAG: one-hop expansion on top of the fused candidates. It is a no-op
+    # until a knowledge base has had its graph built.
+    graph_rag_enabled: bool = True
+    graph_extra_top_k: int = 3
+    graph_max_chunks_per_build: int = 200
+    graph_extract_timeout_seconds: float = 60.0
 
     # Chat
     llm_timeout_seconds: float = 60.0

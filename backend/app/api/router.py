@@ -9,6 +9,7 @@ from app.api.v1 import (
     documents,
     eval,
     feedback,
+    graph,
     health,
     kbs,
     mcp,
@@ -36,3 +37,4 @@ api_router.include_router(ops.router)
 api_router.include_router(api_keys.router)
 api_router.include_router(public.router)
 api_router.include_router(mcp.router)
+api_router.include_router(graph.router)
