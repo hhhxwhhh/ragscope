@@ -40,6 +40,12 @@ const router = createRouter({
           props: true,
         },
         {
+          path: 'kbs/:id/graph',
+          name: 'kb-graph',
+          component: () => import('@/views/GraphView.vue'),
+          props: true,
+        },
+        {
           path: 'kbs/:id/chat/:conversationId?',
           name: 'kb-chat',
           component: () => import('@/views/ChatView.vue'),
@@ -50,6 +56,16 @@ const router = createRouter({
           name: 'eval-run',
           component: () => import('@/views/EvalRunView.vue'),
           props: true,
+        },
+        {
+          path: 'api-keys',
+          name: 'api-keys',
+          component: () => import('@/views/ApiKeysView.vue'),
+        },
+        {
+          path: 'ops',
+          name: 'ops',
+          component: () => import('@/views/OpsView.vue'),
         },
         {
           path: 'eval/compare',

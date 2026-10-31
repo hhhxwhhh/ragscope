@@ -241,9 +241,22 @@ export interface ChatMessage {
   trace: RetrievalTrace | null
   feedback: MessageFeedback | null
   agent: AgentRun | null
+  // Deep research only: the sub-questions the planner produced.
+  plan?: DeepPlan | null
 }
 
-export type ChatMode = 'rag' | 'agent' | 'auto'
+export type ChatMode = 'rag' | 'agent' | 'deep' | 'auto'
+
+export interface DeepPlan {
+  sub_questions: string[]
+  review?: {
+    sufficient?: boolean
+    missing?: string | null
+    followup_queries?: string[]
+    iteration?: number
+    exhausted?: boolean
+  } | null
+}
 
 export interface ChatRequest {
   question: string
@@ -482,4 +495,77 @@ export interface TrendPoint {
 export interface DashboardTrend {
   days: number
   points: TrendPoint[]
+}
+
+
+// --- GraphRAG ---------------------------------------------------------------
+
+export interface GraphNode {
+  id: string
+  name: string
+  type: string
+  mention_count: number
+  description: string | null
+}
+
+export interface GraphEdge {
+  source: string
+  target: string
+  relation: string
+  weight: number
+}
+
+export interface GraphPayload {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+  stats: { entities: number; relations: number; mentions: number; building?: boolean }
+  building?: boolean
+}
+
+// --- API keys & audit -------------------------------------------------------
+
+export interface ApiKeyItem {
+  id: string
+  name: string
+  key_prefix: string
+  scopes: string[]
+  description: string | null
+  last_used_at: string | null
+  expires_at: string | null
+  revoked_at: string | null
+  created_at: string
+  usable: boolean
+  key?: string
+}
+
+export interface AuditLogItem {
+  id: string
+  actor_type: string
+  action: string
+  resource_type: string | null
+  resource_id: string | null
+  request_id: string | null
+  ip_address: string | null
+  detail: Record<string, unknown>
+  created_at: string
+}
+
+// --- Ops --------------------------------------------------------------------
+
+export interface OpsSnapshot {
+  http: {
+    requests_total: number
+    errors_total: number
+    error_rate: number
+    p50_seconds: number | null
+    p95_seconds: number | null
+    p99_seconds: number | null
+  }
+  retrieval: { total: number; refusals: number }
+  llm: { tokens_total: number }
+  agent: { runs_total: number }
+  ingest: { total: number }
+  graphrag: { total: number }
+  eval: { runs_total: number }
+  tasks: { backend: string; queue: string; inline_tasks: string[]; queue_depth: number | null }
 }

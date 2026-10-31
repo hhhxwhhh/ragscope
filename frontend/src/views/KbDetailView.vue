@@ -232,6 +232,9 @@ onUnmounted(stopPolling)
       <div class="tags">
         <el-tag size="small" type="info">chunk {{ kb.chunk_size }} / {{ kb.chunk_overlap }}</el-tag>
         <el-tag size="small" type="info">索引版本 {{ kb.index_version }}</el-tag>
+        <el-button size="small" @click="router.push(`/kbs/${kb.id}/graph`)">
+          知识图谱
+        </el-button>
         <el-button type="primary" size="small" @click="router.push(`/kbs/${kb.id}/chat`)">
           开始问答
         </el-button>

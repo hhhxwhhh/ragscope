@@ -56,6 +56,8 @@ const timingLabels: Record<string, string> = {
   bm25_ms: 'BM25',
   fusion_ms: 'RRF 融合',
   rerank_ms: '重排',
+  graph_ms: '图扩展（1 跳）',
+  agent_ms: 'Agent 规划',
   total_ms: '总计',
 }
 

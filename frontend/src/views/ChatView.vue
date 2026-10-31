@@ -71,11 +71,16 @@ const CHAT_MODES: { value: ChatMode; label: string; hint: string }[] = [
   },
   { value: 'rag', label: '快速', hint: '单轮混合检索，延迟和成本最低' },
   { value: 'agent', label: 'Agent', hint: '多步检索，适合比较、多跳和跨文档问题' },
+  {
+    value: 'deep',
+    label: '深度研究',
+    hint: '规划子问题 → 并行检索 → 证据审核补检，成本最高，适合跨文档综述',
+  },
 ]
 
 function initialChatMode(): ChatMode {
   const stored = localStorage.getItem('ragscope.chat-mode')
-  if (stored === 'auto' || stored === 'rag' || stored === 'agent') {
+  if (stored === 'auto' || stored === 'rag' || stored === 'agent' || stored === 'deep') {
     return stored
   }
   // Migrate the old boolean agent switch.
@@ -83,7 +88,7 @@ function initialChatMode(): ChatMode {
 }
 
 const chatMode = ref<ChatMode>(initialChatMode())
-const routedMode = ref<'rag' | 'agent' | null>(null)
+const routedMode = ref<'rag' | 'agent' | 'deep' | null>(null)
 const routingReason = ref('')
 const activeModeHint = computed(
   () => CHAT_MODES.find((item) => item.value === chatMode.value)?.hint || '',
@@ -352,7 +357,7 @@ async function send(): Promise<void> {
       },
       {
         onMeta: (meta) => {
-          if (meta.mode === 'rag' || meta.mode === 'agent') {
+          if (meta.mode === 'rag' || meta.mode === 'agent' || meta.mode === 'deep') {
             routedMode.value = meta.mode
           }
           routingReason.value = meta.routing_reason || ''
@@ -366,6 +371,12 @@ async function send(): Promise<void> {
         },
         onAgentStep: (step) => {
           appendAgentStep(assistantMessage, step)
+          scrollToBottom()
+        },
+        onPlan: (plan) => {
+          // Deep research announces its decomposition before any retrieval runs,
+          // so the user sees why the answer is taking longer.
+          assistantMessage.plan = plan
           scrollToBottom()
         },
         onToken: (delta) => {
@@ -710,7 +721,7 @@ onMounted(async () => {
             effect="plain"
             :title="routingReason"
           >
-            自动 → {{ routedMode === 'agent' ? 'Agent' : '快速 RAG' }}
+            自动 → {{ routedMode === 'deep' ? '深度研究' : routedMode === 'agent' ? 'Agent' : '快速 RAG' }}
           </el-tag>
           <el-tooltip :content="activeModeHint" placement="bottom">
             <el-radio-group v-model="chatMode" size="small" :disabled="sending">
@@ -966,6 +977,25 @@ onMounted(async () => {
                 </span>
                 <span class="muted">· {{ message.agent.tool_calls }} 次工具</span>
               </div>
+              <div v-if="message.plan?.sub_questions?.length" class="deep-plan">
+                <div class="deep-plan-title">
+                  <span class="trace-label">子问题拆解</span>
+                  <span
+                    v-if="message.plan.review?.sufficient !== undefined"
+                    class="muted"
+                  >
+                    证据审核：{{ message.plan.review.sufficient ? '已覆盖' : '仍有缺口' }}
+                    <template v-if="message.plan.review?.missing">
+                      · {{ message.plan.review.missing }}
+                    </template>
+                  </span>
+                </div>
+                <ol class="deep-plan-list">
+                  <li v-for="question in message.plan.sub_questions" :key="question">
+                    {{ question }}
+                  </li>
+                </ol>
+              </div>
               <div
                 v-for="step in message.agent.steps"
                 :key="step.step_index"
@@ -1076,6 +1106,29 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.deep-plan {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+}
+
+.deep-plan-title {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.deep-plan-list {
+  margin: 0;
+  padding-left: 20px;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
 .chat-page {
   display: flex;
   height: calc(100vh - 60px);

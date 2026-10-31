@@ -7,6 +7,7 @@ import type {
   Conversation,
   DebugRequest,
   DebugResponse,
+  DeepPlan,
   FeedbackCaseResult,
   MessageFeedback,
   Page,
@@ -109,6 +110,7 @@ export interface StreamHandlers {
   onMeta?: (meta: StreamMeta) => void
   onRetrieval?: (trace: RetrievalTrace) => void
   onAgentStep?: (step: AgentStep) => void
+  onPlan?: (plan: DeepPlan) => void
   onToken?: (delta: string) => void
   onDone?: (message: ChatMessage | null) => void
   onError?: (detail: string) => void
@@ -213,6 +215,9 @@ function dispatchFrame(frame: string, handlers: StreamHandlers): void {
       break
     case 'agent_step':
       handlers.onAgentStep?.(data as AgentStep)
+      break
+    case 'plan':
+      handlers.onPlan?.(data as DeepPlan)
       break
     case 'token':
       handlers.onToken?.((data as { delta: string }).delta)
