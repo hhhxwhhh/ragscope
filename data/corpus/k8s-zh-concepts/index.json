@@ -1,0 +1,21 @@
+{
+  "name": "Kubernetes 中文文档（核心概念）",
+  "slug": "k8s-zh-concepts",
+  "source": "https://kubernetes.io/zh-cn/docs/concepts/",
+  "license": "CC BY 4.0 · Kubernetes 文档，来源 https://kubernetes.io/zh-cn/",
+  "generated_at": "2026-10-31T12:29:49.965066+00:00",
+  "count": 1,
+  "chars": 881,
+  "documents": [
+    {
+      "url": "https://kubernetes.io/zh-cn/docs/concepts",
+      "title": "概念 | Kubernetes",
+      "file": "zh-cn__docs__concepts-9439c9.md",
+      "chars": 881,
+      "sha256": "4bd1d4811e809b946688681c2dbf6d67a847fd84ed11ee0e5a2baab371b006fd",
+      "fetched_at": "2026-10-31T12:29:49.965066+00:00",
+      "depth": 0
+    }
+  ],
+  "errors": []
+}
