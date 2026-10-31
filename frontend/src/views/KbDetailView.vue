@@ -251,15 +251,17 @@ onUnmounted(stopPolling)
             :show-file-list="false"
             :http-request="handleUpload"
             :disabled="uploading"
-            accept=".md,.txt,.pdf,.docx"
+            accept=".md,.txt,.pdf,.docx,.pptx,.xlsx,.xlsm,.csv,.tsv,.html,.htm"
           >
             <el-icon class="upload-icon"><UploadFilled /></el-icon>
             <div class="el-upload__text">
-              拖拽 .md / .txt / .pdf / .docx 到这里，或 <em>点击选择</em>
+              拖拽文档到这里，或 <em>点击选择</em>
             </div>
             <template #tip>
               <div class="el-upload__tip">
-                单文件不超过 5 MB；PDF 会保留页码，扫描件需先做 OCR
+                单文件不超过 5 MB；支持 .md / .txt / .pdf / .docx / .pptx / .xlsx /
+                .csv / .tsv / .html。PDF 保留页码，PPT 按页、表格按工作表定位；PDF
+                扫描件需先做 OCR
               </div>
             </template>
           </el-upload>
