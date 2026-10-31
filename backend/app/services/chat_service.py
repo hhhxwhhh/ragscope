@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import metrics
 from app.core.config import get_settings
 from app.core.errors import NotFoundError
 from app.db.session import SessionLocal
@@ -395,6 +396,7 @@ async def _save_assistant_message(
     )
     db.add(message)
     await db.flush()
+    metrics.observe_llm_usage(usage)
 
     citations: list[Citation] = []
     trace_row: RetrievalTrace | None = None

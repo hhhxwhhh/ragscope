@@ -8,6 +8,7 @@ import anyio
 from sqlalchemy import delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import metrics
 from app.models.chunk import Chunk
 from app.models.document import Document, DocumentStatus
 from app.models.knowledge_base import KnowledgeBase
@@ -115,6 +116,7 @@ async def ingest_document(db: AsyncSession, document_id: UUID) -> None:
         document.status = DocumentStatus.INDEXED
         kb.index_version = new_index_version
         await db.commit()
+        metrics.observe_ingest("indexed")
 
     except Exception as exc:
         await db.rollback()
@@ -126,6 +128,7 @@ async def ingest_document(db: AsyncSession, document_id: UUID) -> None:
             except Exception:
                 logger.exception("failed to clean up vectors for %s", document_id)
         await _mark_failed(db, document_id, stage, exc)
+        metrics.observe_ingest("failed")
         logger.warning("ingestion failed for %s at %s: %s", document_id, stage, exc)
 
 

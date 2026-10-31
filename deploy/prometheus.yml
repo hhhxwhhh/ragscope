@@ -1,0 +1,20 @@
+# Prometheus scrape configuration for the compose stack.
+# The API publishes counters, gauges and histograms at /metrics with the
+# `ragscope_` prefix (see backend/app/core/metrics.py).
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: ragscope-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]
+        labels:
+          service: ragscope-api
+          environment: compose
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

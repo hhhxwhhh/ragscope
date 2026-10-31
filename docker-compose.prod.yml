@@ -45,6 +45,7 @@ services:
       - .env
     environment:
       APP_ENV: prod
+      LOG_FORMAT: json
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
       REDIS_HOST: redis
@@ -57,6 +58,11 @@ services:
       HF_HOME: /data/hf
       # Demo corpus for `docker compose exec api python scripts/seed_demo.py`.
       DEMO_DOCS_DIR: /app/data
+      # Traces go to the bundled Jaeger instance; disable in clusters where an
+      # external collector is configured.
+      OTEL_ENABLED: ${OTEL_ENABLED:-true}
+      OTEL_EXPORTER_ENDPOINT: jaeger:4317
+      OTEL_SAMPLE_RATIO: ${OTEL_SAMPLE_RATIO:-0.2}
     volumes:
       - chroma:/data/chroma
       - storage:/data/storage
@@ -69,6 +75,32 @@ services:
         condition: service_healthy
     expose:
       - "8000"
+
+  # Scrapes /metrics once per 15s. The config file is bind-mounted so the
+  # scrape targets can be edited without rebuilding an image.
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus
+    ports:
+      - "${PROMETHEUS_HOST_PORT:-9090}:9090"
+    depends_on:
+      - api
+
+  # All-in-one collector + UI: OTLP gRPC on 4317, UI on 16686.
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "${JAEGER_UI_PORT:-16686}:16686"
+      - "4317:4317"
 
   web:
     build:
@@ -86,3 +118,4 @@ volumes:
   chroma:
   storage:
   hf_cache:
+  promdata:

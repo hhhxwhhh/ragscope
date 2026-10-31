@@ -18,7 +18,9 @@ from typing import Any
 import anyio
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import metrics
 from app.core.config import get_settings
+from app.core.tracing import span
 from app.models.knowledge_base import KnowledgeBase
 from app.rag import bm25_index, retrieval_cache, vector_store
 from app.rag.embedder import embed_texts_async
@@ -201,6 +203,30 @@ def _merge_bm25_hit(
 
 
 async def retrieve(
+    db: AsyncSession,
+    kb: KnowledgeBase,
+    query: str,
+    *,
+    history: list[tuple[str, str]] | None = None,
+    config: RetrievalConfig | None = None,
+) -> RetrievalOutcome:
+    """Public entry point: adds a trace span and export metrics.
+
+    The instrumentation lives here rather than inside ``_retrieve`` so the cache
+    hit path and the full path are observed by exactly one place — a metric that
+    only counts cache misses looks like traffic dropped after go-live.
+    """
+    with span("rag.retrieve", kb_id=str(kb.id), query_chars=len(query)) as current:
+        outcome = await _retrieve(db, kb, query, history=history, config=config)
+        current.set_attribute("retrieval.cache_hit", bool(outcome.trace.get("cache_hit")))
+        current.set_attribute("retrieval.candidates", len(outcome.candidates))
+        timings = outcome.trace.get("stage_timings") or {}
+        current.set_attribute("retrieval.total_ms", float(timings.get("total_ms", 0)))
+    metrics.observe_retrieval(outcome.trace)
+    return outcome
+
+
+async def _retrieve(
     db: AsyncSession,
     kb: KnowledgeBase,
     query: str,

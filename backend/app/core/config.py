@@ -18,10 +18,21 @@ class Settings(BaseSettings):
 
     # Application
     app_name: str = "RAGScope"
+    app_version: str = "0.1.0"
     app_env: str = "dev"
     api_prefix: str = "/api/v1"
     log_level: str = "INFO"
+    log_format: str = "text"  # text | json
     cors_origins: str = "http://localhost:5173"
+
+    # Observability
+    metrics_enabled: bool = True
+    # When set, /metrics requires `Authorization: Bearer <token>`.
+    metrics_token: str = ""
+    otel_enabled: bool = False
+    otel_service_name: str = "ragscope-api"
+    otel_exporter_endpoint: str = ""
+    otel_sample_ratio: float = 0.2
 
     # Auth
     secret_key: str = "dev-only-secret-change-me-use-32-bytes-or-more-in-prod"

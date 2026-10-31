@@ -10,6 +10,7 @@ from app.api.v1 import (
     feedback,
     health,
     kbs,
+    ops,
     prompts,
     retrieval,
     reviews,
@@ -28,3 +29,4 @@ api_router.include_router(retrieval.router)
 api_router.include_router(eval.router)
 api_router.include_router(reviews.router)
 api_router.include_router(dashboard.router)
+api_router.include_router(ops.router)

@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import metrics
 from app.core.config import get_settings
 from app.core.deps import get_current_user, get_current_user_stateless
 from app.core.errors import ServiceUnavailableError
@@ -237,6 +238,7 @@ async def _agent_event_stream(
         return
 
     yield _sse("retrieval", result.to_trace(turn.question))
+    metrics.observe_agent_run("agent", len(result.steps), result.stopped_reason)
 
     if not result.evidence:
         latency_ms = int((time.perf_counter() - started) * 1000)
