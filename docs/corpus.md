@@ -104,12 +104,32 @@ PYTHONPATH=. .venv/Scripts/python.exe scripts/crawl_corpus.py \
 
 ## 6. 仓库里现在有什么
 
-`data/corpus/vue3-zh/`：Vue 3 官方中文文档的 **54 篇**指南页，约 **31.8 万字符**，
-抓取自 `cn.vuejs.org`（MIT 许可，见包内 `LICENSE-NOTICE.md`）。
+| 语料包 | 内容 | 篇数 | 字符数 | 许可 |
+|---|---|---:|---:|---|
+| `data/corpus/vue3-zh/` | Vue 3 官方中文文档的指南页 | 54 | 约 31.4 万 | MIT（来源 `cn.vuejs.org`） |
+| `data/corpus/vite-zh/` | Vite 官方中文文档的 `guide/` + `config/` | 39 | 约 24.8 万 | MIT（来源 `cn.vite.dev`） |
 
-它能支撑的真实问题包括「响应式原理是什么」「ref 和 reactive 有什么区别」「组合式 API 与
-选项式 API 如何取舍」「Teleport 解决什么问题」——用来演示检索、引用、多跳 Agent 和评测，
-比虚构语料更有说服力。
+合计 **93 篇、约 56 万字符**的真实中文技术文档，许可声明见各包内 `LICENSE-NOTICE.md`。
+
+它们能支撑的真实问题包括「响应式原理是什么」「ref 和 reactive 有什么区别」「组合式 API
+与选项式 API 如何取舍」「Teleport 解决什么问题」「Vite 的依赖预构建解决什么问题」
+「`build.target` 的默认值是什么」——用来演示检索、引用、多跳 Agent 和评测，比虚构语料
+更有说服力。
+
+### 抓取中遇到的一个真实噪声
+
+Vite 每个页面开头都有一段大会横幅（Building Together / ViteConf 2026 / October 15,
+Online），**39 篇全部命中**。它唯一的标记是 `class="viteconf"`——噪声属性正则里
+`nav` / `banner` 这类提示对它无效，因为它在 HTML 里就是一个普通链接。
+
+修法是加一条**位置规则**：H1 之前的短块视为站点装饰并丢弃。三道护栏都是被真实页面
+打出来的：
+
+1. 只有 **H1** 能锚定——首个标题是 H2 说明页面没有标题，上面那段是引言；
+2. 前置块必须 **≤ 200 字符**——长的是正文；
+3. 前置块不能含**列表项**——前置列表是内容不是装饰。
+
+第 1 条就是单元测试当场抓出来的：最初按「任意标题」判定，会删掉以列表开头的正文。
 
 ---
 

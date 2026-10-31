@@ -25,8 +25,8 @@ v0.5 新增的企业级子系统（指标/追踪、API Key、MCP、多智能体�
 ## 现在能做什么
 
 - 注册 / 登录：access JWT 放内存和 localStorage，refresh token 走 HttpOnly cookie、一次性轮换，前端单飞刷新；登录按 email + IP 做 Redis 失败计数限流
-- 知识库 CRUD；.md / .txt / .pdf / .docx 上传，后台解析、结构感知切块、embedding、入库，失败可重试；进程重启会回收 stale 入库任务和评测运行
-- 文档解析保留结构：Markdown 标题路径、DOCX 标题与表格、PDF 按页提取并记录页码；chunk、引用、trace 都能追溯到第几页
+- 知识库 CRUD；上传 .md / .txt / .pdf / .docx / .pptx / .xlsx / .csv / .tsv / .html，后台解析、结构感知切块、embedding、入库，失败可重试；进程重启会回收 stale 入库任务和评测运行
+- 文档解析保留结构：Markdown 标题路径、DOCX 标题与表格、PDF / PPTX 按页（幻灯片）提取并记录页码、XLSX 按工作表、CSV / TSV 转成带表头的 Markdown 表格；chunk、引用、trace 都能追溯到第几页 / 第几页幻灯片 / 第几个工作表
 - 混合检索：BGE 中文向量 + jieba/BM25，RRF 融合，`bge-reranker-base` 可选重排；每个知识库用 `index_version` 让 BM25 与向量缓存失效
 - 多查询扩展：可选用 LLM 生成 2–3 个改写问题一起召回，跨越不同表述提高召回；失败或超时会自动回退到单查询
 - Redis 检索缓存：按知识库、索引版本、完整检索配置、会话上下文和 query 做指纹，命中时跳过向量化、召回与重排；评测运行强制绕过缓存
@@ -54,7 +54,10 @@ v0.5 新增的企业级子系统（指标/追踪、API Key、MCP、多智能体�
 - 语义缓存：对首轮问题做 embedding 相似度匹配（默认阈值 0.93），命中后复用「证据集 + 答案」，引用编号仍然正确；按 index_version 与 prompt_variant 失效，每 KB 上限 200 条 LRU 淘汰
 - 用量与预算：按天 / 按知识库聚合 `messages.token_usage`，`DAILY_TOKEN_BUDGET` 超限时流式接口 429、JSON 接口降级为拒答；运维页展示今日预算与近 14 天 token 柱状图
 - Webhook：订阅 `sync.completed` / `sync.failed` / `eval.completed` / `ingest.failed`，HMAC-SHA256 签名、3 次指数退避重试、投递结果可回查，支持测试投递
-- 语料库：`scripts/crawl_corpus.py` 把文档站抓成本地 Markdown 快照（断点续爬、robots、限速、`index.json` 清单 + 许可声明），前端「语料库」页可逐篇审阅、一键导入任意知识库；仓库自带 Vue 3 中文文档 54 篇 / 31.4 万字符真实语料
+- CRAG（纠正式检索）：重排之后先给证据分级（`correct` / `ambiguous` / `incorrect`），后两者触发二次召回——LLM 改写或关键词生成 2 条新查询、稠密阈值放宽、并强制启用 BM25（正是主链路那道闸门造成了这次「无证据」）；新候选追加在重排序列尾部，不伪装成第一名。分级默认用零成本的分数规则，可选换成 LLM 判定「段落里到底有没有答案」
+- 上下文压缩：把最终上下文按句子裁剪，只留与查询有词项重叠的句子（中文用 jieba + 字符二元组）；可选 LLM 模式，要求模型逐行复制原句并且只保留与原文逐字一致的行，压缩只能缩短文本、不能改写
+- 检索链路详情页：每次检索的 `graph` / `crag` / `compress` / `counts` 载荷落库（单列 `stage_payload` JSONB），可回看任意一次历史检索——阶段耗时瀑布、CRAG 判定与二次召回查询、压缩收益、候选分阶段对比（向量 / BM25 / 融合 / 最终 / CRAG / 图谱）
+- 语料库：`scripts/crawl_corpus.py` 把文档站抓成本地 Markdown 快照（断点续爬、robots、限速、`index.json` 清单 + 许可声明），前端「语料库」页可逐篇审阅、一键导入任意知识库；仓库自带 Vue 3 中文文档 54 篇 / 31.4 万字符与 Vite 中文文档 39 篇 / 24.8 万字符真实语料
 
 ## 一次检索的链路
 
@@ -70,8 +73,14 @@ v0.5 新增的企业级子系统（指标/追踪、API Key、MCP、多智能体�
                       jieba + BM25 ───> 词法 top-k
                           └─ RRF 融合（跨 query 加权，k=60）
                               └─ bge-reranker-base 重排（可选，3s 超时回退）
-                                  └─ 回写缓存 ────┤
-                                                  └─ 带编号引用的 Prompt ──> DeepSeek（流式）
+                                  └─ CRAG 证据分级（可选）
+                                      ├─ correct ──> 直接进 Prompt
+                                      └─ ambiguous / incorrect ──> 二次召回
+                                          （改写/关键词查询 + 放宽阈值 + 强制 BM25）
+                                  └─ GraphRAG 一跳扩展（可选，追加在尾部）
+                                      └─ 上下文压缩（可选，句子级裁剪）
+                                          └─ 回写缓存 ────┤
+                                                          └─ 带编号引用的 Prompt ──> DeepSeek（流式）
                                                       └─ 回答 + 引用 + citation_stats + retrieval_trace
 ```
 
@@ -172,13 +181,14 @@ Agent 路径用 `langchain.agents.create_agent` 编译一张 LangGraph ReAct 状
 | 后端 | Python 3.12、FastAPI、Pydantic v2、SQLAlchemy 2.0 async + asyncpg |
 | 存储 | PostgreSQL 16、Redis 7、ChromaDB（PersistentClient 嵌入式） |
 | RAG 框架 | LangChain 1.x（LCEL、`ChatOpenAI`、`HuggingFaceEmbeddings`、`langchain-chroma`）、LangGraph 1.x（`create_agent` ReAct 图） |
-| 检索 | BGE 中文向量（`BAAI/bge-small-zh-v1.5`）、rank_bm25 + jieba、`BAAI/bge-reranker-base` |
+| 检索 | BGE 中文向量（`BAAI/bge-small-zh-v1.5`）、rank_bm25 + jieba、`BAAI/bge-reranker-base`、CRAG 证据分级与纠正式二次召回、句子级上下文压缩 |
 | 生成 | LangChain `ChatOpenAI` 对接 DeepSeek（OpenAI 兼容接口），SSE 流式 |
 | Agent / 编排 | LangGraph 1.x：`create_agent` ReAct 图、`StateGraph` 多智能体（planner / researcher / critic） |
 | 协议 | MCP（JSON-RPC 2.0，2025-06-18 版本协商）、OpenAI 兼容接口、SSE、REST |
 | 可观测 | Prometheus 指标（自研暴露层）、OpenTelemetry + OTLP/Jaeger、结构化 JSON 日志 |
 | 异步 | Celery 5 + Redis broker、`acks_late`、CronJob/beat 级 stale 回收 |
 | 数据采集 | httpx 异步抓取、robots.txt + 限速、标准库 HTMLParser 的 readability-lite、feedparser、GitHub contents API |
+| 文档解析 | PDF（pypdf）、DOCX（python-docx）、PPTX / XLSX（标准库 `zipfile` + `ElementTree` 直读 OOXML，零新增依赖）、CSV / TSV、HTML、Markdown / TXT |
 | 前端 | Vue 3 + TypeScript + Vite、Element Plus、Pinia、Vue Router、ECharts（折线 + 力导向图）、markdown-it + DOMPurify |
 | 测试 | pytest + pytest-asyncio、httpx ASGITransport、真实 PostgreSQL/Redis、fake retriever |
 | 基础设施 | 多阶段 Dockerfile、Docker Compose（api / worker / beat / prometheus / jaeger）、Nginx（SSE 不缓冲）、K8s 清单（Deployment / HPA / PDB / Ingress / CronJob）、Alembic、ruff、pre-commit、GitHub Actions、Locust |
@@ -321,8 +331,29 @@ PYTHONPATH=. .venv/Scripts/python.exe scripts/crawl_corpus.py \
   --license "MIT · Vue.js 官方文档，来源 https://cn.vuejs.org/"
 ```
 
+```bash
+# 抓取 Vite 中文文档（guide + config 两次抓取会合并进同一个语料包）
+PYTHONPATH=. .venv/Scripts/python.exe scripts/crawl_corpus.py \
+  --name "Vite 官方文档（中文）" --slug vite-zh \
+  --sitemap https://cn.vite.dev/sitemap.xml --include guide/ \
+  --max-pages 60 --out ../data/corpus/vite-zh \
+  --license "MIT · Vite 官方文档，来源 https://cn.vite.dev/"
+
+PYTHONPATH=. .venv/Scripts/python.exe scripts/crawl_corpus.py \
+  --name "Vite 官方文档（中文）" --slug vite-zh \
+  --sitemap https://cn.vite.dev/sitemap.xml --include config/ \
+  --max-pages 60 --out ../data/corpus/vite-zh \
+  --license "MIT · Vite 官方文档，来源 https://cn.vite.dev/"
+```
+
 然后在左侧「语料库」页选择语料包 → 导入知识库（已存在同来源 URL 的文档自动跳过）。
-仓库里已经带了这次抓取的结果：`data/corpus/vue3-zh/`（54 篇，约 31.4 万字符）。
+仓库里已经带了这两次抓取的结果：
+
+| 语料包 | 篇数 | 字符数 | 许可 |
+|---|---:|---:|---|
+| `data/corpus/vue3-zh/` | 54 | 约 31.4 万 | MIT · Vue.js 官方文档 |
+| `data/corpus/vite-zh/` | 39 | 约 24.8 万 | MIT · Vite 官方文档 |
+
 设计与合规说明见 **[docs/corpus.md](docs/corpus.md)**。
 
 ### 接入外部数据源（定期补充真实内容）
