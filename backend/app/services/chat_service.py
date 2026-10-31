@@ -495,6 +495,12 @@ async def _save_assistant_message(
             config=trace.get("config") or {},
             candidates=trace.get("candidates") or {},
             stage_timings=trace.get("stage_timings") or {},
+            stage_payload={
+                "graph": trace.get("graph") or {},
+                "crag": trace.get("crag") or {},
+                "compress": trace.get("compress") or {},
+                "counts": trace.get("counts") or {},
+            },
         )
         db.add(trace_row)
 

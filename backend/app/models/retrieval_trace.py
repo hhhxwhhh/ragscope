@@ -34,4 +34,25 @@ class RetrievalTrace(Base):
     config: Mapped[dict[str, Any]] = mapped_column(JSONB)
     candidates: Mapped[dict[str, Any]] = mapped_column(JSONB)
     stage_timings: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    # Stage payloads without their own column: graph / crag / compress / counts.
+    # Kept as one blob so adding a retrieval stage never needs a migration.
+    stage_payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    @property
+    def graph(self) -> dict[str, Any]:
+        return self.stage_payload.get("graph") or {}
+
+    @property
+    def crag(self) -> dict[str, Any]:
+        return self.stage_payload.get("crag") or {}
+
+    @property
+    def compress(self) -> dict[str, Any]:
+        return self.stage_payload.get("compress") or {}
+
+    @property
+    def counts(self) -> dict[str, Any]:
+        return self.stage_payload.get("counts") or {}

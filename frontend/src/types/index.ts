@@ -187,6 +187,10 @@ export interface TraceCandidate {
   fused_score?: number | null
   rerank_score?: number | null
   matched_queries?: number[] | null
+  graph_score?: number | null
+  graph_via?: string | null
+  crag_via?: string | null
+  compressed?: boolean | null
 }
 
 export interface RetrievalTrace {
@@ -206,6 +210,33 @@ export interface RetrievalTrace {
   counts?: Record<string, number>
   candidates: Record<string, TraceCandidate[]>
   created_at?: string
+  // Graph / CRAG / compression payloads (stage_payload on the server).
+  graph?: Record<string, unknown>
+  crag?: Record<string, unknown>
+  compress?: Record<string, unknown>
+}
+
+export interface TraceSummary {
+  id: string
+  message_id: string | null
+  query: string
+  rewritten_query: string
+  rewrite_applied: boolean
+  cache_hit: boolean
+  reranked: boolean
+  created_at: string
+  total_ms: number
+  final_count: number
+}
+
+export interface TraceDetail extends RetrievalTrace {
+  id: string
+  kb_id: string
+  message_id: string | null
+  graph: Record<string, unknown>
+  crag: Record<string, unknown>
+  compress: Record<string, unknown>
+  counts: Record<string, number>
 }
 
 export interface AgentStep {

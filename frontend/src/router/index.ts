@@ -51,6 +51,12 @@ const router = createRouter({
           props: true,
         },
         {
+          path: 'kbs/:id/traces',
+          name: 'kb-traces',
+          component: () => import('@/views/TracesView.vue'),
+          props: true,
+        },
+        {
           path: 'kbs/:id/chat/:conversationId?',
           name: 'kb-chat',
           component: () => import('@/views/ChatView.vue'),

@@ -20,6 +20,7 @@ from app.api.v1 import (
     retrieval,
     reviews,
     sources,
+    traces,
     usage,
     webhooks,
 )
@@ -46,3 +47,4 @@ api_router.include_router(sources.router)
 api_router.include_router(usage.router)
 api_router.include_router(webhooks.router)
 api_router.include_router(corpus.router)
+api_router.include_router(traces.router)

@@ -236,6 +236,9 @@ onUnmounted(stopPolling)
         <el-button size="small" @click="router.push(`/kbs/${kb.id}/graph`)">
           知识图谱
         </el-button>
+        <el-button size="small" @click="router.push(`/kbs/${kb.id}/traces`)">
+          检索链路
+        </el-button>
         <el-button type="primary" size="small" @click="router.push(`/kbs/${kb.id}/chat`)">
           开始问答
         </el-button>
