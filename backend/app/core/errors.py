@@ -52,6 +52,11 @@ class RateLimitedError(AppError):
     code = "rate_limited"
 
 
+class QuotaExceededError(AppError):
+    status_code = 429
+    code = "quota_exceeded"
+
+
 class ServiceUnavailableError(AppError):
     status_code = 503
     code = "service_unavailable"

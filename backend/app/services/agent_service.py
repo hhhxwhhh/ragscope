@@ -19,7 +19,7 @@ from app.rag.agent.loop import AgentLoopResult, AgentStepRecord, stream_agent
 from app.rag.answer import complete_answer
 from app.rag.llm import get_chat_model
 from app.rag.pipeline import RetrievalConfig, RetrievalOutcome
-from app.services import chat_service
+from app.services import chat_service, usage_service
 from app.services.kb_service import get_owned_kb
 
 logger = logging.getLogger(__name__)
@@ -51,6 +51,9 @@ async def prepare_turn(
     """
     async with SessionLocal() as db:
         kb = await get_owned_kb(db, kb_id, user_id)
+        # Agent runs spend more tokens than single-shot answers, so the budget is
+        # enforced before a conversation row is created.
+        await usage_service.enforce_budget(db, kb.id)
         conversation = await chat_service.ensure_conversation(
             db, kb.id, user_id, conversation_id, question
         )

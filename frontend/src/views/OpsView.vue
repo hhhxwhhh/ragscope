@@ -4,9 +4,11 @@ import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 
 import { getOpsSummary, METRICS_URL } from '@/api/ops'
-import type { OpsSnapshot } from '@/types'
+import { getUsageSummary } from '@/api/usage'
+import type { OpsSnapshot, UsageSummary } from '@/types'
 
 const snapshot = ref<OpsSnapshot | null>(null)
+const usage = ref<UsageSummary | null>(null)
 const loading = ref(false)
 const autoRefresh = ref(true)
 let timer: number | undefined
@@ -21,6 +23,10 @@ const errorRate = computed(() => {
   return rate === undefined ? '—' : `${(rate * 100).toFixed(2)}%`
 })
 
+const maxDailyTokens = computed(() =>
+  Math.max(1, ...(usage.value?.daily || []).map((point) => point.tokens)),
+)
+
 const refusalRate = computed(() => {
   const stats = snapshot.value?.retrieval
   if (!stats || !stats.total) return '—'
@@ -30,7 +36,9 @@ const refusalRate = computed(() => {
 async function load(): Promise<void> {
   loading.value = true
   try {
-    snapshot.value = await getOpsSummary()
+    const [ops, usageData] = await Promise.all([getOpsSummary(), getUsageSummary(14)])
+    snapshot.value = ops
+    usage.value = usageData
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载运行指标失败')
   } finally {
@@ -110,6 +118,34 @@ onUnmounted(() => {
     <el-row :gutter="16">
       <el-col :span="12">
         <el-card shadow="never">
+          <template #header>今日 token 预算</template>
+          <div class="budget-row">
+            <span class="stat-value small">{{ usage?.today.used ?? 0 }}</span>
+            <span class="muted">
+              / {{ usage?.today.budget ? usage.today.budget : '不限' }}
+            </span>
+            <el-tag v-if="usage?.today.exceeded" type="danger" size="small">已用尽</el-tag>
+          </div>
+          <el-progress
+            v-if="usage?.today.budget"
+            :percentage="Math.min(100, Math.round(((usage?.today.used ?? 0) / (usage?.today.budget || 1)) * 100))"
+            :status="usage?.today.exceeded ? 'exception' : undefined"
+            :stroke-width="8"
+          />
+          <div class="spark">
+            <div
+              v-for="point in usage?.daily || []"
+              :key="point.date"
+              class="spark-bar"
+              :style="{ height: `${Math.max(4, Math.round((point.tokens / maxDailyTokens) * 100))}%` }"
+              :title="`${point.date} · ${point.tokens} tokens`"
+            />
+          </div>
+          <div class="muted small">近 14 天 token 用量（悬停看数值）</div>
+        </el-card>
+      </el-col>
+      <el-col :span="12">
+        <el-card shadow="never">
           <template #header>后台任务</template>
           <el-descriptions :column="1" border size="small">
             <el-descriptions-item label="执行后端">
@@ -133,7 +169,10 @@ onUnmounted(() => {
           </el-descriptions>
         </el-card>
       </el-col>
-      <el-col :span="12">
+    </el-row>
+
+    <el-row :gutter="16" class="cards">
+      <el-col :span="24">
         <el-card shadow="never">
           <template #header>流水线</template>
           <el-descriptions :column="1" border size="small">
@@ -207,6 +246,28 @@ onUnmounted(() => {
 .stat-foot {
   color: #94a3b8;
   font-size: 12px;
+}
+
+.budget-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 72px;
+  margin: 14px 0 6px;
+}
+
+.spark-bar {
+  flex: 1;
+  min-height: 4px;
+  border-radius: 3px 3px 0 0;
+  background: linear-gradient(180deg, #60a5fa, #2563eb);
 }
 
 .slo {

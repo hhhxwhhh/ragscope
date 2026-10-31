@@ -129,7 +129,40 @@ async def ingest_document(db: AsyncSession, document_id: UUID) -> None:
                 logger.exception("failed to clean up vectors for %s", document_id)
         await _mark_failed(db, document_id, stage, exc)
         metrics.observe_ingest("failed")
+        await _notify_failure(db, document_id, stage, exc)
         logger.warning("ingestion failed for %s at %s: %s", document_id, stage, exc)
+
+
+async def _notify_failure(
+    db: AsyncSession,
+    document_id: UUID,
+    stage: str,
+    exc: Exception,
+) -> None:
+    """Best-effort alert; a broken webhook must never change ingestion state."""
+    try:
+        from app.services import webhook_service
+
+        document = await db.get(Document, document_id)
+        if document is None:
+            return
+        kb = await db.get(KnowledgeBase, document.kb_id)
+        if kb is None:
+            return
+        await webhook_service.notify(
+            db,
+            owner_id=kb.owner_id,
+            event="ingest.failed",
+            payload={
+                "document_id": str(document.id),
+                "filename": document.filename,
+                "kb_id": str(kb.id),
+                "stage": stage,
+                "error": str(exc)[:500],
+            },
+        )
+    except Exception:
+        logger.warning("failed to enqueue ingest.failed webhook", exc_info=True)
 
 
 async def _mark_failed(

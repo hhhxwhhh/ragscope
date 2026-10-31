@@ -52,6 +52,8 @@ v0.5 新增的企业级子系统（指标/追踪、API Key、MCP、多智能体�
 - 异步任务：`TASK_BACKEND=inline|celery` 一键切换，Celery worker 接管入库与评测运行，broker 不可用时自动降级为进程内执行；`/ops/summary` 暴露队列积压
 - 数据源与定期同步：web（有界 BFS）/ sitemap / RSS / GitHub 四种连接器，抓取 → HTML→Markdown → 去重 → 增量入库；按 URL 认身份、按正文 sha256 判版本，内容没变完全不触发 embedding；robots.txt、请求间隔、页数/深度上限可配；inline 与 Celery 两种调度后端，run 记录 added/updated/unchanged/failed
 - 语义缓存：对首轮问题做 embedding 相似度匹配（默认阈值 0.93），命中后复用「证据集 + 答案」，引用编号仍然正确；按 index_version 与 prompt_variant 失效，每 KB 上限 200 条 LRU 淘汰
+- 用量与预算：按天 / 按知识库聚合 `messages.token_usage`，`DAILY_TOKEN_BUDGET` 超限时流式接口 429、JSON 接口降级为拒答；运维页展示今日预算与近 14 天 token 柱状图
+- Webhook：订阅 `sync.completed` / `sync.failed` / `eval.completed` / `ingest.failed`，HMAC-SHA256 签名、3 次指数退避重试、投递结果可回查，支持测试投递
 
 ## 一次检索的链路
 

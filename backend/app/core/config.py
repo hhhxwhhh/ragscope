@@ -82,6 +82,8 @@ class Settings(BaseSettings):
     retrieval_cache_enabled: bool = True
     retrieval_cache_ttl_seconds: int = 300
     # Semantic answer cache (embedding similarity over recent questions)
+    # 0 = unlimited. Applies per knowledge base per UTC day.
+    daily_token_budget: int = 0
     semantic_cache_enabled: bool = True
     semantic_cache_threshold: float = 0.93
     semantic_cache_max_entries: int = 200

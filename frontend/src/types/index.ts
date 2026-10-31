@@ -619,3 +619,13 @@ export interface SourcePreview {
   errors: { url: string; error: string }[]
   pages_fetched: number
 }
+
+
+// --- Usage / budget ---------------------------------------------------------
+
+export interface UsageSummary {
+  days: number
+  daily: { date: string; tokens: number }[]
+  by_kb: { id: string; name: string; tokens: number }[]
+  today: { used: number; budget: number; remaining: number | null; exceeded: boolean }
+}

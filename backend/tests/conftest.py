@@ -54,6 +54,7 @@ from app.main import app  # noqa: E402
 settings = get_settings()
 
 TABLES = (
+    "webhook_endpoints",
     "semantic_cache_entries",
     "sync_runs",
     "data_sources",

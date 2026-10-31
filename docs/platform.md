@@ -240,3 +240,59 @@ CPU。上传一个 40 秒的 PDF，等于让整个 API 卡 40 秒。
   测的是上游供应商，还会烧真钱。脚本注释里写明了限流上限，避免把 429 当成容量。
 - **pre-commit** 只放快速、确定性的检查（ruff、YAML/JSON 校验、私钥检测、导入冒烟、
   前端类型检查）。慢的东西留在 CI，否则大家会开始用 `--no-verify`。
+
+---
+
+## 8. 用量与预算：让「花多少钱」可回答
+
+`backend/app/services/usage_service.py` · `api/v1/usage.py` · `views/OpsView.vue`
+
+### 问题
+
+RAG 的边际成本几乎全在 token 上。没有用量视图时，团队只能等账单；没有预算闸门时，
+一个脚本循环能把一个月的额度在半小时内烧完。
+
+### 实现
+
+- **聚合在读取时做**：`messages.token_usage` 已经是每条回答的事实来源，按天 / 按知识库
+  做一次 `GROUP BY`（JSONB `->> 'total_tokens'` + cast）。不维护计数器表，因为计数器会
+  在崩溃、手工删数据后漂移，而漂移的账单比慢 20ms 的查询危险得多。
+- **预算按知识库、按 UTC 日**：`DAILY_TOKEN_BUDGET`（0 = 不限）。超限时流式接口返回 429
+  `quota_exceeded`，JSON 接口降级为「只给拒答、不调模型」——同样的额度约束，不同的失败语义。
+- **缓存优先于预算**：检查顺序是「语义缓存命中 → 免费返回」，未命中才校验预算。已经付过费的
+  答案不该因为今天的额度用完而不可用。
+- **观测**：`/api/v1/usage/summary?days=14` 返回日序列、Top 知识库与今日预算状态，运维页
+  用进度条 + 迷你柱状图展示。
+
+### 取舍
+
+- 预算是软闸门：并发请求可能同时通过检查，最终略超。硬闸门需要预扣 + 结算，属于计费系统
+  的范畴；这里的目标是「防止失控」，不是「精确计费」。
+- 不按用户维度计费：当前权限模型下一个知识库只有一个 owner，按 KB 统计已经等价。
+
+---
+
+## 9. Webhook：把异步结果推给外部系统
+
+`backend/app/services/webhook_service.py` · `api/v1/webhooks.py`
+
+### 问题
+
+同步和评测都是异步的。用户不可能一直盯着页面，外部系统（工单、IM 机器人、数据平台）也
+需要知道「这批文档更新完了」。
+
+### 实现
+
+- 事件：`sync.completed` / `sync.failed` / `eval.completed` / `ingest.failed`。
+- 订阅表 `webhook_endpoints`：URL、订阅事件、启用状态、最近一次投递结果。
+- **签名**：`X-RAGScope-Signature: sha256=<HMAC-SHA256(secret, body)>`，密钥每个端点独立，
+  接收方必须校验，否则任何人都能伪造「同步完成」。
+- **投递**：Celery（或 asyncio 任务）异步发送，3 次重试（1s / 3s / 9s），4xx 不重试
+  （URL 错了重试只会制造噪音），超时 10s。
+- **可观测**：每次投递写回 `last_status` / `last_error` / `last_delivery_at`；
+  `POST /webhooks/{id}/test` 可以立刻验证接收端。
+
+### 已知边界
+
+没有持久化 outbox：进程在投递前崩溃会丢一次通知。要做到「至少一次」需要一张
+`webhook_deliveries` 表 + 独立 worker 扫表，这是下一步而不是隐藏的现状。

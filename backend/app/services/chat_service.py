@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import metrics
 from app.core.config import get_settings
-from app.core.errors import NotFoundError
+from app.core.errors import NotFoundError, QuotaExceededError
 from app.db.session import SessionLocal
 from app.models.agent import AgentRun, AgentStep
 from app.models.citation import Citation
@@ -39,6 +39,7 @@ from app.schemas.chat import (
     MessageOut,
     RetrievalTraceOut,
 )
+from app.services import usage_service
 
 logger = logging.getLogger(__name__)
 
@@ -372,6 +373,21 @@ def _as_uuid(value: Any) -> UUID | None:
         return None
 
 
+async def _budget_ok(db: AsyncSession, kb_id: UUID) -> bool:
+    """Budget check for the non-streaming path.
+
+    The streaming path *raises* (a request that will do nothing useful should say
+    so); the JSON path is already inside a transaction, so it degrades to a
+    refusal instead of discarding the user's turn.
+    """
+    try:
+        await usage_service.enforce_budget(db, kb_id)
+        return True
+    except QuotaExceededError:
+        logger.warning("daily token budget exhausted kb=%s", kb_id)
+        return False
+
+
 async def _semantic_lookup(
     db: AsyncSession,
     kb: KnowledgeBase,
@@ -548,7 +564,7 @@ async def answer_once(
     cached = await _semantic_lookup(db, kb, question, prompt_variant, history)
     if cached is not None:
         outcome, answer, usage = cached
-    elif outcome.candidates:
+    elif outcome.candidates and await _budget_ok(db, kb.id):
         answer, usage = await complete_answer(
             question,
             outcome.candidates,
@@ -558,6 +574,9 @@ async def answer_once(
         )
         answer = answer or REFUSAL_MESSAGE
         await _semantic_store(db, kb, question, answer, outcome, prompt_variant, usage)
+    elif outcome.candidates:
+        # Budget exhausted: answer from evidence without calling the model.
+        answer = REFUSAL_MESSAGE
     else:
         answer = REFUSAL_MESSAGE
 
@@ -627,6 +646,8 @@ async def prepare_stream(
         cached_usage: dict[str, Any] | None = None
         if cached is not None:
             outcome, cached_answer, cached_usage = cached
+        elif outcome.candidates:
+            await usage_service.enforce_budget(db, kb.id)
         conversation.last_message_at = datetime.now(UTC)
         await db.commit()
         return StreamPreparation(

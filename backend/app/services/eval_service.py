@@ -42,6 +42,7 @@ from app.rag.prompt import (
 )
 from app.rag.router import choose_mode
 from app.schemas.eval import EvalCaseCreate, EvalCaseUpdate, EvalRunCreate, RelevantRef
+from app.services import webhook_service
 
 logger = logging.getLogger(__name__)
 
@@ -856,6 +857,17 @@ async def execute_run(run_id: UUID) -> None:
             }
             run.finished_at = datetime.now(UTC)
             await db.commit()
+            await webhook_service.notify(
+                db,
+                owner_id=kb.owner_id,
+                event="eval.completed",
+                payload={
+                    "run_id": str(run.id),
+                    "kb_id": str(kb.id),
+                    "status": str(run.status),
+                    "metrics": run.metrics,
+                },
+            )
             logger.info(
                 "eval run %s finished status=%s cases=%d mrr=%s",
                 run.id,

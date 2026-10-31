@@ -26,7 +26,7 @@ configure_env()
 
 from app.db.redis import close_redis  # noqa: E402
 from app.db.session import SessionLocal, engine  # noqa: E402
-from app.services import eval_service, source_service  # noqa: E402
+from app.services import eval_service, source_service, webhook_service  # noqa: E402
 from app.services.ingestion import recover_stale_documents  # noqa: E402
 from app.workers.celery_app import celery_app  # noqa: E402
 from app.workers.ingestion import run_ingestion  # noqa: E402
@@ -76,6 +76,13 @@ def sync_due_task() -> dict[str, int]:
     """Beat entry point: start every source whose schedule is due."""
     dispatched = asyncio.run(_run_isolated(source_service.sync_due_sources))
     return {"dispatched": int(dispatched or 0)}
+
+
+@celery_app.task(name="ragscope.webhook", bind=True, max_retries=0)
+def webhook_task(self, endpoint_id: str, event: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Deliver one signed webhook outside the request/sync process."""
+    ok = asyncio.run(_run_isolated(webhook_service.deliver, UUID(endpoint_id), event, payload))
+    return {"endpoint_id": endpoint_id, "event": event, "ok": bool(ok)}
 
 
 @celery_app.task(name="ragscope.recover_stale")

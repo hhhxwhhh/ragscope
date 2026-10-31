@@ -19,6 +19,7 @@ from app.models.review import AnswerReview, ReviewVerdict
 from app.models.semantic_cache import SemanticCacheEntry
 from app.models.source import DataSource, SyncRun
 from app.models.user import User
+from app.models.webhook import WEBHOOK_EVENTS, WebhookEndpoint
 
 __all__ = [
     "AgentRun",
@@ -49,4 +50,6 @@ __all__ = [
     "ReviewVerdict",
     "SemanticCacheEntry",
     "User",
+    "WEBHOOK_EVENTS",
+    "WebhookEndpoint",
 ]

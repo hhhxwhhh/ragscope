@@ -41,7 +41,7 @@ from app.models.document import Document, DocumentStatus
 from app.models.knowledge_base import KnowledgeBase
 from app.models.source import DataSource, SyncRun
 from app.schemas.source import SourceCreate, SourceUpdate, validate_config
-from app.services import document_service, storage
+from app.services import document_service, storage, webhook_service
 from app.services.ingestion import ingest_document
 from app.services.sources import SourceItem, fetch
 
@@ -240,6 +240,18 @@ async def execute_run(run_id: UUID) -> None:
                 source.last_run_at = datetime.now(UTC)
                 source.next_run_at = compute_next_run(source.schedule_minutes)
             await db.commit()
+            if source is not None and kb is not None:
+                await webhook_service.notify(
+                    db,
+                    owner_id=kb.owner_id,
+                    event="sync.failed",
+                    payload={
+                        "source_id": str(source.id),
+                        "source_name": source.name,
+                        "kb_id": str(kb.id),
+                        "error": (run.error if run else "") or "unknown",
+                    },
+                )
             return
 
         finished = datetime.now(UTC)
@@ -250,6 +262,18 @@ async def execute_run(run_id: UUID) -> None:
         source.last_error = None
         source.next_run_at = compute_next_run(source.schedule_minutes, finished)
         await db.commit()
+        await webhook_service.notify(
+            db,
+            owner_id=kb.owner_id,
+            event="sync.completed",
+            payload={
+                "source_id": str(source.id),
+                "source_name": source.name,
+                "kb_id": str(kb.id),
+                "status": run.status,
+                "stats": run.stats,
+            },
+        )
         logger.info(
             "sync done source=%s status=%s stats=%s",
             source.id,
