@@ -419,6 +419,15 @@ ANSWERABLE: list[tuple[str, tuple[tuple[str, tuple[int, ...]], ...], str]] = [
         (("cookbook/migration-vuex.html", (1, 5)),),
         "迁移指南定位 + stores 目录命名差异",
     ),
+    # 这条一开始被标成「不可答」，是错的：Vue 的「深入响应式系统」里真有一节
+    # 「与信号 (signal) 的联系 / API 设计权衡 / Angular 信号」，原文就给了
+    # signal(0) / count() / .set() / .update() 的例子。系统答对了、裁判也给
+    # 了 ratio=1.0，错的是我的标签。评测把标注错误抓了出来，这条因此改成可答。
+    (
+        "Angular 的信号 signal 怎么用？",
+        (("guide/extras/reactivity-in-depth", (32,)),),
+        "「Angular 信号」小节：语料里确实有，不是语料外问题",
+    ),
 ]
 
 # Unanswerable cases carry no gold refs by definition. The corpus is frontend
@@ -437,7 +446,9 @@ UNANSWERABLE: list[str] = [
     "Element Plus 的表格组件怎么开启虚拟滚动？",
     "Svelte 5 的 runes 是怎么工作的？",
     "Webpack 5 的模块联邦怎么配置？",
-    "Angular 的信号 signal 怎么用？",
+    # 「Angular 的信号 signal 怎么用？」曾经在这里，被评测证明标错了 —— 语料里
+    # 真的有这一节，已移到 ANSWERABLE。留作注释是因为它说明了一件事：
+    # 不可答集的标注同样会错，而发现它的正是事实性裁判。
 ]
 
 

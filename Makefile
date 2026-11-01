@@ -10,7 +10,7 @@ FRONTEND := frontend
 .DEFAULT_GOAL := help
 .PHONY: help install dev-db dev-db-native dev-db-stop migrate seed seed-eval graph \
         test test-all lint fmt typecheck web-dev web-build up down logs eval-smoke mcp \
-        eval-dataset eval-run eval-ab
+        eval-dataset eval-run eval-breakdown eval-ab
 
 help: ## 列出所有命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -42,6 +42,9 @@ eval-dataset: ## 在真实语料上重建手工标注的评测集，需要传 KB
 
 eval-run: ## 跑一轮检索评测，需要传 KB=<uuid>；可用 EXTRA 追加参数，如 EXTRA="--final-top-k 10"
 	cd $(BACKEND) && PYTHONPATH=. HF_HUB_OFFLINE=1 $(PY) scripts/run_eval.py --kb $(KB) $(EXTRA)
+
+eval-breakdown: ## 按用例构成拆分某一轮的指标，需要传 RUN=<uuid>
+	cd $(BACKEND) && PYTHONPATH=. $(PY) scripts/eval_breakdown.py $(RUN)
 
 eval-ab: ## 基线 vs 放开 final_top_k 的对照（验证 Recall@k 曲线的天花板在哪）
 	cd $(BACKEND) && PYTHONPATH=. HF_HUB_OFFLINE=1 $(PY) scripts/run_eval.py --kb $(KB)
