@@ -23,7 +23,6 @@ frontend/dist/
 backend/data/
 .ruff_cache/
 .hypothesis/
-.workbuddy/
 data/.misses.txt
 
 # 个人书籍等大文件与 OCR 中间产物，不入库
