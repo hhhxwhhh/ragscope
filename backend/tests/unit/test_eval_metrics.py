@@ -1,3 +1,5 @@
+import pytest
+
 from app.services.eval_service import (
     aggregate_metrics,
     looks_refused,
@@ -39,6 +41,33 @@ def test_recall_is_fraction_of_labelled_chunks_found() -> None:
     assert metrics["recall@3"] == 0.5
     assert metrics["mrr"] == 1 / 2
     assert metrics["first_relevant_rank"] == 2
+
+
+def test_gold_refs_may_span_several_documents() -> None:
+    """Comparison questions are labelled across pages that look alike.
+
+    Recall must divide by the total number of labelled chunks regardless of
+    which document they live in — otherwise a case labelled across three pages
+    could never score 1.0 and the aggregate would quietly under-report.
+    """
+    refs = [
+        {"document_id": "doc-a", "chunk_index": 1},
+        {"document_id": "doc-b", "chunk_index": 1},
+        {"document_id": "doc-c", "chunk_index": 1},
+    ]
+    retrieved = [
+        _candidate("doc-b", 1),
+        _candidate("doc-x", 7),
+        _candidate("doc-a", 1),
+    ]
+    metrics = score_case(retrieved, refs, answerable=True)
+
+    assert metrics["first_relevant_rank"] == 1
+    assert metrics["recall@1"] == pytest.approx(1 / 3)
+    assert metrics["recall@3"] == pytest.approx(2 / 3)
+    # Same chunk index in a different document must not be mistaken for a hit.
+    assert metrics["recall@5"] == pytest.approx(2 / 3)
+    assert metrics["mrr"] == 1.0
 
 
 def test_unanswerable_case_scores_refusal_instead_of_recall() -> None:

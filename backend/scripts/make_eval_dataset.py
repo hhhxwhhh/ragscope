@@ -11,10 +11,17 @@ How the labels were produced
 For each question the target documentation page is fixed first (by URL), then
 that page's chunks were read and the ones that literally answer the question
 were picked. ``scripts/_inspect_chunks.py`` prints the chunks used for that pass.
-A label of two chunks is deliberate: most of these questions are *comparisons*
-("X 和 Y 有什么区别"), and the answer is usually split across an intro chunk and
-a "limitations / vs" chunk. Labelling only one of them would make recall@1 the
-ceiling for a question that genuinely needs two passages.
+
+Two deliberate choices make the set harder than it looks:
+
+* **Multi-chunk gold.** Comparison questions ("X 和 Y 有什么区别") usually have
+  their answer split across an intro chunk and a "limitations / vs" chunk.
+  Labelling only one would cap recall@1 for a question that genuinely needs two
+  passages.
+* **Multi-document gold.** Some questions span pages that are *semantically
+  close to each other* (命名路由 vs 命名视图, 重定向 vs 别名, State vs Getter vs
+  Action). Those are the cases that actually separate a retriever from a keyword
+  match, so the gold refs point at several documents at once.
 
 Usage
 -----
@@ -46,170 +53,418 @@ LOGGER = logging.getLogger("make_eval_dataset")
 
 DATASET_NAME = "Vue 技术文档真实评测集"
 DATASET_DESC = (
-    "基于仓库内真实语料（Vue 3 / Vite / Vue Router 官方中文文档，143 篇）手工标注。"
-    "可答案例的 gold chunk 由人工阅读原文确定，不可答案例用于测拒答。"
+    "基于仓库内真实语料（Vue 3 / Vite / Vue Router / Pinia 官方中文文档）手工标注。"
+    "可答案例的 gold chunk 由人工阅读原文确定，允许跨多篇文档；"
+    "不可答案例用于测拒答。"
 )
 
-# (question, page URL substring, gold chunk indexes, notes)
-ANSWERABLE: list[tuple[str, str, tuple[int, ...], str]] = [
+# (question, ((page locator, gold chunk indexes), ...), notes)
+#
+# A locator is either an exact ``external_url`` (used when a page's URL is a
+# prefix of another page's URL and no substring can be unique) or a URL
+# substring that resolves to exactly one document. The script refuses to guess
+# in either case.
+ANSWERABLE: list[tuple[str, tuple[tuple[str, tuple[int, ...]], ...], str]] = [
     (
         "ref 和 reactive 有什么区别？",
-        "guide/essentials/reactivity-fundamentals",
-        (18, 22),
+        (("guide/essentials/reactivity-fundamentals", (18, 22)),),
         "答案跨「reactive() 是什么」与「reactive() 的局限性」两块",
     ),
     (
         "组合式 API 和选项式 API 该怎么选？",
-        "guide/extras/composition-api-faq",
-        (11, 14),
+        (("guide/extras/composition-api-faq", (11, 14)),),
         "「取舍」小节 + 选项式 API 是否会被废弃",
     ),
     (
         "Teleport 是用来解决什么问题的？",
-        "guide/built-ins/teleport",
-        (1, 2),
+        (("guide/built-ins/teleport", (1, 2)),),
         "定义 + 全屏模态框这个典型场景",
     ),
     (
         "watch 和 watchEffect 的区别是什么？",
-        "guide/essentials/watchers",
-        (16, 18),
+        (("guide/essentials/watchers", (16, 18)),),
         "watchEffect 的引入 + 「watch vs. watchEffect」小节",
     ),
     (
         "computed 和 methods 的区别是什么？",
-        "guide/essentials/computed",
-        (8, 9),
+        (("guide/essentials/computed", (8, 9)),),
         "「计算属性缓存 vs 方法」整节",
     ),
     (
         "v-if 和 v-show 应该怎么选？",
-        "guide/essentials/conditional",
-        (7,),
+        (("guide/essentials/conditional", (7,)),),
         "「v-if vs. v-show」小节",
     ),
     (
         "父子组件之间怎么传递数据？",
-        "guide/components/props",
-        (2, 11),
+        (("guide/components/props", (2, 11)),),
         "props 声明 + 静态/动态传值",
     ),
     (
         "Vue 的响应式系统是怎么实现的？",
-        "guide/extras/reactivity-in-depth",
-        (5, 8),
+        (("guide/extras/reactivity-in-depth", (5, 8)),),
         "getter/setters 与 Proxy 的取舍 + track/trigger 依赖收集",
     ),
     (
         "v-for 里为什么要写 key？",
-        "guide/essentials/list",
-        (11, 12),
+        (("guide/essentials/list", (11, 12)),),
         "「通过 key 管理状态」整节",
     ),
     (
         "onMounted 钩子在什么时候被调用？",
-        "guide/essentials/lifecycle",
-        (2,),
+        (("guide/essentials/lifecycle", (2,)),),
         "注册周期钩子小节",
     ),
     (
         "Suspense 组件是做什么用的？",
-        "guide/built-ins/suspense",
-        (1,),
+        (("guide/built-ins/suspense", (1,)),),
         "开篇定义（协调异步依赖）",
     ),
     (
         "provide 和 inject 应该怎么用？",
-        "guide/components/provide-inject",
-        (3, 7),
+        (("guide/components/provide-inject", (3, 7)),),
         "Provide 与 Inject 两个小节",
     ),
     (
         "Vite 的依赖预构建是做什么的？",
-        "guide/dep-pre-bundling",
-        (1, 2),
+        (("guide/dep-pre-bundling", (1, 2)),),
         "定义 + 两个目的（CJS/UMD 兼容、减少请求数）",
     ),
     (
         "Vite 为什么比传统打包器启动快？",
-        "guide/why",
-        (2,),
+        (("guide/why", (2,)),),
         "「起源」小节：ESM 按需提供 vs 预先打包",
     ),
     (
         "Vite 开发服务器怎么配置接口代理？",
-        "config/server-options",
-        (8,),
+        (("config/server-options", (8,)),),
         "server.proxy 配置项",
     ),
     (
         "Vite 是怎么处理静态资源的？",
-        "guide/assets",
-        (2, 3),
+        (("guide/assets", (2, 3)),),
         "将资源引入为 URL + 构建期处理规则",
     ),
     (
         "Vite 的 build.target 该怎么设置？",
-        "config/build-options",
-        (1,),
+        (("config/build-options", (1,)),),
         "build.target 配置项",
     ),
     (
         "路由传参时 params 和 query 有什么区别？",
-        "guide/essentials/navigation",
-        (3, 5),
+        (("guide/essentials/navigation", (3, 5)),),
         "带查询参数的例子 + params 不能与 path 同时使用",
     ),
     (
         "Vue Router 怎么实现路由懒加载？",
-        "guide/advanced/lazy-loading",
-        (1, 2),
+        (("guide/advanced/lazy-loading", (1, 2)),),
         "动态导入整节",
     ),
     (
         "导航守卫有哪些？执行顺序是怎样的？",
-        "guide/advanced/navigation-guards",
-        (1, 20),
+        (("guide/advanced/navigation-guards", (1, 20)),),
         "全局前置守卫 + 完整的导航解析流程",
     ),
     (
         "history 模式和 hash 模式有什么区别？",
-        "guide/essentials/history-mode",
-        (2, 4),
+        (("guide/essentials/history-mode", (2, 4)),),
         "Hash 模式与 HTML5 模式两个小节",
     ),
     (
         "怎么用代码跳转到另一个路由？",
-        "guide/essentials/navigation",
-        (1, 2),
+        (("guide/essentials/navigation", (1, 2)),),
         "编程式导航：router.push",
+    ),
+    # --- 第二批：跨文档 + 语义互相干扰的用例 ---
+    (
+        "Pinia 里的 state、getter 和 action 分别是什么？",
+        (
+            ("core-concepts/state.html", (1,)),
+            ("core-concepts/getters.html", (1,)),
+            ("core-concepts/actions.html", (1,)),
+        ),
+        "三个概念分属三篇文档，各取开篇定义块",
+    ),
+    (
+        "Pinia 的 Option Store 和 Setup Store 有什么区别？",
+        (("https://pinia.vuejs.org/zh/core-concepts", (2, 3, 7)),),
+        "Option Store 与 Setup Store 两节 + 「你应该选用哪种语法？」的取舍",
+    ),
+    (
+        "Pinia 相比 Vuex 有哪些不同？",
+        (("pinia.vuejs.org/zh/introduction.html", (14, 16)),),
+        "「对比 Vuex」+「对比 Vuex 3.x/4.x」（mutation 被弃用等）",
+    ),
+    (
+        "Pinia 里怎么监听 state 的变化？",
+        (("core-concepts/state.html", (14, 16)),),
+        "$subscribe() 的用法 + 刷新时机",
+    ),
+    (
+        "命名路由和命名视图分别解决什么问题？",
+        (
+            ("essentials/named-routes.html", (1, 2)),
+            ("essentials/named-views.html", (1,)),
+        ),
+        "命名路由的 name 与好处 + 命名视图的同级多视图，两页名字极像",
+    ),
+    (
+        "路由的重定向和别名有什么区别？",
+        (("essentials/redirect-and-alias.html", (1, 5)),),
+        "重定向小节 + 别名小节（URL 是否被替换是核心差别）",
+    ),
+    (
+        "Vue Router 的路由匹配语法支持哪些写法？",
+        (("essentials/route-matching-syntax.html", (2, 4, 8)),),
+        "参数自定义正则 + 可重复参数 + 可选参数",
+    ),
+    (
+        "带参数的动态路由匹配怎么用？",
+        (("essentials/dynamic-matching.html", (1, 2)),),
+        "路径参数定义 + 通过 $route.params 读取",
+    ),
+    (
+        "怎么自定义路由切换时的滚动行为？",
+        (("advanced/scroll-behavior.html", (1, 2)),),
+        "scrollBehavior 的签名 + savedPosition",
+    ),
+    (
+        "KeepAlive 组件是做什么用的？",
+        (("guide/built-ins/keep-alive", (1, 2)),),
+        "开篇定义 + 基本使用（缓存被移除的组件实例）",
+    ),
+    (
+        "TransitionGroup 和 Transition 有什么区别？",
+        (("guide/built-ins/transition-group", (1, 2)),),
+        "定义 + 「和 <Transition> 的区别」小节",
+    ),
+    (
+        "异步组件怎么定义？",
+        (("guide/components/async", (1, 3)),),
+        "defineAsyncComponent 基本用法 + 加载与错误状态",
+    ),
+    (
+        "模板引用怎么拿到 DOM 元素或子组件实例？",
+        (("guide/essentials/template-refs", (1, 6)),),
+        "ref attribute 基本用法 + 组件上的 ref",
+    ),
+    (
+        "Vite 的环境变量和模式是怎么配合的？",
+        (("guide/env-and-mode", (3, 5)),),
+        "VITE_ 前缀暴露规则 + .env.[mode] 文件加载顺序",
+    ),
+    (
+        "Vite 构建产物怎么部署成静态站点？",
+        (("guide/static-deploy", (1, 3)),),
+        "前置假设 + 构建应用（npm run build / dist）",
+    ),
+    (
+        "写一个 Vite 插件需要了解哪些钩子？",
+        (("guide/api-plugin", (1, 14)),),
+        "插件扩展 Rolldown 接口 + Vite 独有钩子清单",
+    ),
+    (
+        "Vite 的 HMR API 怎么接收模块更新？",
+        (("guide/api-hmr", (1, 6)),),
+        "import.meta.hot 条件守卫 + hot.accept(cb)",
+    ),
+    (
+        "组件上的 v-model 是怎么工作的？",
+        (("guide/components/v-model", (1, 3)),),
+        "defineModel() 用法 + 底层机制（modelValue + update:modelValue）",
+    ),
+    (
+        "插槽 slot 怎么用？",
+        (("guide/components/slots", (2, 8)),),
+        "插槽内容与出口 + 具名插槽",
+    ),
+    (
+        "什么是组合式函数 composable？",
+        (("guide/reusability/composables", (2, 5)),),
+        "「什么是组合式函数」定义 + 鼠标跟踪器示例",
+    ),
+    (
+        "Vue 应用是怎么创建和挂载的？",
+        (("guide/essentials/application", (1, 4)),),
+        "createApp 创建应用实例 + .mount() 挂载",
+    ),
+    (
+        "单文件组件 SFC 是什么？",
+        (("guide/scaling-up/sfc", (1, 3)),),
+        "SFC 定义 + 为什么要使用单文件组件",
+    ),
+    # --- 第三批：跨主题铺开 ---
+    (
+        "事件修饰符有哪些，怎么用？",
+        (("guide/essentials/event-handling", (9, 13)),),
+        "事件修饰符（.stop/.prevent）+ 按键修饰符",
+    ),
+    (
+        "v-model 在表单元素上怎么用？",
+        (("guide/essentials/forms", (1, 2)),),
+        "手写绑定与 v-model 的等价关系 + 不同控件绑定的 property/事件",
+    ),
+    (
+        "class 和 style 怎么动态绑定？",
+        (("guide/essentials/class-and-style", (2, 12)),),
+        ":class 绑定对象 + :style 绑定对象",
+    ),
+    (
+        "组件的全局注册和局部注册有什么区别？",
+        (("guide/components/registration", (1, 4)),),
+        "两种注册方式 + 全局注册的 tree-shaking 问题",
+    ),
+    (
+        "子组件怎么向父组件触发事件？",
+        (("guide/components/events", (2, 6)),),
+        "$emit 触发 + defineEmits() 声明",
+    ),
+    (
+        "透传 attributes 是什么？",
+        (("guide/components/attrs", (2, 7)),),
+        "透传 attribute 的定义 + 用 inheritAttrs: false 禁用继承",
+    ),
+    (
+        "Transition 组件怎么用？",
+        (("https://cn.vuejs.org/guide/built-ins/transition", (1, 2)),),
+        "两个内置组件的分工 + <Transition> 的触发条件（注意与 transition-group 同前缀）",
+    ),
+    (
+        "模板语法里的文本插值和指令怎么用？",
+        (("guide/essentials/template-syntax", (2, 14)),),
+        "Mustache 插值 + 指令 Directives",
+    ),
+    (
+        "路由元信息 meta 怎么用？",
+        (("guide/advanced/meta", (1, 3)),),
+        "meta 字段配置 + route.meta 的非递归合并",
+    ),
+    (
+        "路由切换时怎么加过渡动效？",
+        (("guide/advanced/transitions", (2, 4)),),
+        "单个路由的过渡 + 基于路由的动态过渡",
+    ),
+    (
+        "路由里获取数据有哪几种方式？",
+        (("guide/advanced/data-fetching", (1, 7)),),
+        "导航完成后获取 vs 导航完成前获取",
+    ),
+    (
+        "嵌套路由怎么配置？",
+        (("guide/essentials/nested-routes", (1, 4)),),
+        "嵌套路由场景 + children 配置",
+    ),
+    (
+        "路由组件怎么传 props？",
+        (("guide/essentials/passing-props", (1, 4)),),
+        "用 props 解除与 $route 的耦合 + 布尔模式",
+    ),
+    (
+        "Vite 项目怎么打包发布？",
+        (("guide/build", (1, 4)),),
+        "vite build 入口 + base 公共基础路径",
+    ),
+    (
+        "Vite 怎么和传统后端框架集成？",
+        (("guide/backend-integration", (1,)),),
+        "后端集成的前置配置步骤",
+    ),
+    (
+        "Vite 构建性能变差时该怎么排查？",
+        (("guide/performance", (1, 3)),),
+        "常见性能问题分类 + 审核社区插件",
+    ),
+    (
+        "Vite 怎么做服务端渲染？",
+        (("guide/ssr", (1, 3)),),
+        "SSR 的定义边界 + 典型源码结构",
+    ),
+    (
+        "Vite 多页面应用怎么配置？",
+        (("guide/build", (10,)),),
+        "多页面应用模式的目录与输入配置（与「打包发布」同页不同块）",
+    ),
+    (
+        "Vite 预览服务器的端口怎么设置？",
+        (("config/preview-options", (3,)),),
+        "preview.port 配置项",
+    ),
+    (
+        "Pinia 插件能做什么？",
+        (("core-concepts/plugins.html", (1, 3)),),
+        "可扩展的内容清单 + 插件就是一个接收 context 的函数",
+    ),
+    (
+        "组件外面怎么使用 Pinia store？",
+        (("core-concepts/outside-component-usage.html", (1,)),),
+        "useStore() 依赖 pinia 实例，组件外需先安装",
+    ),
+    (
+        "Pinia 的 store 怎么做单元测试？",
+        (("cookbook/testing.html", (1, 2)),),
+        "测试 store 要注意的三件事 + setActivePinia(createPinia())",
+    ),
+    (
+        "Pinia 怎么做热模块替换？",
+        (("cookbook/hot-module-replacement.html", (1, 2)),),
+        "Pinia 支持热更新 + acceptHMRUpdate 写法",
+    ),
+    (
+        "Pinia 里 store 之间怎么互相调用？",
+        (("cookbook/composing-stores.html", (1,)),),
+        "组合式 store 可相互使用，但不能形成无限循环",
+    ),
+    (
+        "怎么从 Vuex 迁移到 Pinia？",
+        (("cookbook/migration-vuex.html", (1, 5)),),
+        "迁移指南定位 + stores 目录命名差异",
     ),
 ]
 
-# Unanswerable cases carry no gold refs by definition — the corpus is frontend
-# documentation, so these are outside it even though they look like normal
-# product questions. They measure whether the pipeline refuses instead of
-# answering from the model's own knowledge.
+# Unanswerable cases carry no gold refs by definition. The corpus is frontend
+# documentation, so the first four are plainly out of domain; the last four are
+# *frontend-adjacent* — they look like questions this system should be able to
+# answer, which is exactly when a model is tempted to answer from its own
+# knowledge instead of refusing.
 UNANSWERABLE: list[str] = [
     "公司差旅住宿的报销标准是多少？",
     "如何申请美国旅游签证？",
     "这份文档里有没有讲 Kubernetes 集群的运维？",
     "员工入职第一年有多少天年假？",
+    "React 的 useState 和 useReducer 有什么区别？",
+    "怎么给 Nginx 配置反向代理缓存？",
+    "TypeScript 5.0 的装饰器语法改了什么？",
+    "Element Plus 的表格组件怎么开启虚拟滚动？",
+    "Svelte 5 的 runes 是怎么工作的？",
+    "Webpack 5 的模块联邦怎么配置？",
+    "Angular 的信号 signal 怎么用？",
 ]
 
 
-async def _resolve(db, kb_id: str, needle: str) -> tuple:
+async def _resolve(db, kb_id: str, locator: str) -> tuple:
+    """Resolve a page locator to exactly one document, or refuse."""
+    # Some pages are URL prefixes of others (Pinia's /zh/core-concepts index vs
+    # /zh/core-concepts/state.html), so an exact match is tried first.
     rows = (
         await db.execute(
             select(Document.id, Document.filename)
-            .where(Document.kb_id == kb_id, Document.external_url.ilike(f"%{needle}%"))
+            .where(Document.kb_id == kb_id, Document.external_url == locator)
         )
     ).all()
     if not rows:
-        raise SystemExit(f"没有匹配 {needle} 的文档，先导入对应语料包")
+        rows = (
+            await db.execute(
+                select(Document.id, Document.filename).where(
+                    Document.kb_id == kb_id,
+                    Document.external_url.ilike(f"%{locator}%"),
+                )
+            )
+        ).all()
+    if not rows:
+        raise SystemExit(f"没有匹配 {locator} 的文档，先导入对应语料包")
     if len(rows) > 1:
         titles = ", ".join(filename for _, filename in rows)
-        raise SystemExit(f"{needle} 匹配到多篇文档（{titles}），请把定位串写精确")
+        raise SystemExit(f"{locator} 匹配到多篇文档（{titles}），请把定位串写精确")
     return rows[0]
 
 
@@ -255,14 +510,24 @@ async def build(kb_id: str) -> None:
             )
 
         answerable = 0
-        for question, needle, indexes, notes in ANSWERABLE:
-            document_id, filename = await _resolve(db, kb_id, needle)
-            available = await _chunks_of(db, document_id)
-            missing = [index for index in indexes if index not in available]
-            if missing:
-                raise SystemExit(
-                    f"{filename} 缺少标注的 chunk {missing}；"
-                    f"切块参数变了请重新标注（现有 {len(available)} 块）"
+        for question, refs, notes in ANSWERABLE:
+            relevant_refs: list[dict] = []
+            for locator, indexes in refs:
+                document_id, filename = await _resolve(db, kb_id, locator)
+                available = await _chunks_of(db, document_id)
+                missing = [index for index in indexes if index not in available]
+                if missing:
+                    raise SystemExit(
+                        f"{filename} 缺少标注的 chunk {missing}；"
+                        f"切块参数变了请重新标注（现有 {len(available)} 块）"
+                    )
+                relevant_refs.extend(
+                    {
+                        "document_id": str(document_id),
+                        "chunk_index": index,
+                        "filename": filename,
+                    }
+                    for index in indexes
                 )
             db.add(
                 EvalCase(
@@ -271,14 +536,7 @@ async def build(kb_id: str) -> None:
                     answerable=True,
                     expected_mode="rag",
                     notes=notes,
-                    relevant_refs=[
-                        {
-                            "document_id": str(document_id),
-                            "chunk_index": index,
-                            "filename": filename,
-                        }
-                        for index in indexes
-                    ],
+                    relevant_refs=relevant_refs,
                 )
             )
             answerable += 1
