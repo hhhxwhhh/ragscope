@@ -108,8 +108,14 @@ PYTHONPATH=. .venv/Scripts/python.exe scripts/crawl_corpus.py \
 |---|---|---:|---:|---|
 | `data/corpus/vue3-zh/` | Vue 3 官方中文文档的指南页 | 54 | 约 31.4 万 | MIT（来源 `cn.vuejs.org`） |
 | `data/corpus/vite-zh/` | Vite 官方中文文档的 `guide/` + `config/` | 39 | 约 24.8 万 | MIT（来源 `cn.vite.dev`） |
+| `data/corpus/vue-router-zh/` | Vue Router 官方中文文档（`/zh/` 下全部） | 50 | 约 13.2 万 | MIT（来源 `router.vuejs.org/zh/`） |
+| `data/corpus/pinia-zh/` | Pinia 官方中文文档（`/zh/` 下全部） | 41 | 约 11.2 万 | MIT（来源 `pinia.vuejs.org/zh/`） |
 
-合计 **93 篇、约 56 万字符**的真实中文技术文档，许可声明见各包内 `LICENSE-NOTICE.md`。
+合计 **184 篇、约 80 万字符**的真实中文技术文档，许可声明见各包内 `LICENSE-NOTICE.md`。
+
+抓取 Vue Router 时踩到一个坑：`--include "/zh/"` 在 Git Bash 里会被路径转换吃掉
+（`/zh/` 被当成 Windows 路径），结果 sitemap 里明明有 60 多个 `/zh/` URL 却一条都没抓到，
+命令还"成功"返回了 0 篇。带上 `MSYS_NO_PATHCONV=1` 才正常。**静默返回空结果比报错更难查。**
 
 它们能支撑的真实问题包括「响应式原理是什么」「ref 和 reactive 有什么区别」「组合式 API
 与选项式 API 如何取舍」「Teleport 解决什么问题」「Vite 的依赖预构建解决什么问题」

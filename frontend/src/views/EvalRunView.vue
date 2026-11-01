@@ -447,6 +447,24 @@ onUnmounted(stopPolling)
                     </template>
                   </div>
                 </div>
+                <div
+                  v-if="row.metrics.faithfulness_unsupported?.length"
+                  class="unsupported-block"
+                >
+                  <div class="detail-label">
+                    事实性裁判判定为无依据的断言（{{
+                      row.metrics.faithfulness_unsupported.length
+                    }}）
+                  </div>
+                  <ul class="unsupported-list">
+                    <li
+                      v-for="(claim, index) in row.metrics.faithfulness_unsupported"
+                      :key="index"
+                    >
+                      {{ claim }}
+                    </li>
+                  </ul>
+                </div>
                 <div v-if="row.metrics.generation_error" class="detail-error">
                   生成失败：{{ row.metrics.generation_error }}
                 </div>
@@ -787,5 +805,21 @@ onUnmounted(stopPolling)
 .bad-text {
   color: #dc2626;
   font-weight: 700;
+}
+
+.unsupported-block {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: #fef2f2;
+  border-left: 3px solid #dc2626;
+  border-radius: 4px;
+}
+
+.unsupported-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: #7f1d1d;
+  font-size: 12px;
+  line-height: 1.7;
 }
 </style>

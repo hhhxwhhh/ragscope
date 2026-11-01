@@ -787,6 +787,14 @@ async def _generate_case(
                 metrics["faithfulness_ratio"] = report.grounded_ratio
                 metrics["faithfulness_grounded"] = report.grounded
                 metrics["faithfulness_source"] = "llm"
+                # Keep the failing claims, not just the ratio. "接地率 0.75" tells
+                # you something is wrong; "这句话没对上" tells you what to fix.
+                # Capped because a metric dict is not the place for a transcript.
+                metrics["faithfulness_unsupported"] = [
+                    claim.claim[:200]
+                    for claim in report.claims
+                    if not claim.supported
+                ][:5]
         except Exception as exc:  # noqa: BLE001 - never fail an eval case on the judge
             logger.warning("eval faithfulness judge failed: %s", exc)
     return answer, metrics

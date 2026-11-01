@@ -1,0 +1,402 @@
+{
+  "name": "Pinia 官方文档（中文）",
+  "slug": "pinia-zh",
+  "source": "https://pinia.vuejs.org/sitemap.xml",
+  "license": "MIT · Pinia 官方文档，来源 https://pinia.vuejs.org/zh/",
+  "generated_at": "2026-11-01T03:50:31.317163+00:00",
+  "count": 41,
+  "chars": 111706,
+  "documents": [
+    {
+      "url": "https://pinia.vuejs.org/zh/cookbook/migration-0-0-7.html",
+      "title": "Migrating from 0.0.7 | Pinia",
+      "file": "zh__cookbook__migration-0-0-7-d0208d.md",
+      "chars": 3144,
+      "sha256": "146af9a692282dd0b2b2bcd2229a946e3d47c0d08729795940975c4755ab6991",
+      "fetched_at": "2026-11-01T03:50:08.990788+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/cookbook/composables.html",
+      "title": "处理组合式函数 | Pinia",
+      "file": "zh__cookbook__composables-c22ed3.md",
+      "chars": 2745,
+      "sha256": "3d4e9451d8298dd8494520be99fd0666de2df8546bd4ac352a3e3eefa054711c",
+      "fetched_at": "2026-11-01T03:50:10.343698+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/cookbook/hot-module-replacement.html",
+      "title": "HMR (Hot Module Replacement) | Pinia",
+      "file": "zh__cookbook__hot-module-replacement-74769f.md",
+      "chars": 694,
+      "sha256": "f4322fc9e56f78ae7cc7a9feb73ed534864e6690878dad04091637d1cff8c161",
+      "fetched_at": "2026-11-01T03:50:10.640586+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/cookbook/composing-stores.html",
+      "title": "组合式 Store | Pinia",
+      "file": "zh__cookbook__composing-stores-7e9db2.md",
+      "chars": 2093,
+      "sha256": "3eeb4d1527df23a11f3e2eb0fef01180679855377005c763795e3d63cf034d2a",
+      "fetched_at": "2026-11-01T03:50:11.017857+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/cookbook/migration-v1-v2.html",
+      "title": "从 0.x (v1) 迁移至 v2 | Pinia",
+      "file": "zh__cookbook__migration-v1-v2-bdde4f.md",
+      "chars": 3664,
+      "sha256": "1e56eb87b043f87637323d4f9551e30a9ed3a589b862d800a210bc415f206e90",
+      "fetched_at": "2026-11-01T03:50:11.512831+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/cookbook/options-api.html",
+      "title": "不使用 setup() 的用法 | Pinia",
+      "file": "zh__cookbook__options-api-ae345d.md",
+      "chars": 1791,
+      "sha256": "2e08e2d36c942f98a60814ee83e89e69cad3643d2aa0ab91726086df2548888c",
+      "fetched_at": "2026-11-01T03:50:12.495350+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/cookbook/migration-vuex.html",
+      "title": "从 Vuex ≤4 迁移 | Pinia",
+      "file": "zh__cookbook__migration-vuex-1af66b.md",
+      "chars": 7481,
+      "sha256": "589c3f3dc56148778d2ac8c2366c517ab8dfe6e4db89f358582d6ebdf98129e2",
+      "fetched_at": "2026-11-01T03:50:12.536152+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/cookbook/testing.html",
+      "title": "store 测试 | Pinia",
+      "file": "zh__cookbook__testing-749a82.md",
+      "chars": 7893,
+      "sha256": "094dc448453eec4768dc6461396d70a91ad6af32ae1422f4371058a6d4725752",
+      "fetched_at": "2026-11-01T03:50:13.147743+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/cookbook/vscode-snippets.html",
+      "title": "VS Code 代码片段 | Pinia",
+      "file": "zh__cookbook__vscode-snippets-3c47fe.md",
+      "chars": 1535,
+      "sha256": "5d8e4ffec6fe0c25fd0ef13d2dccbc06a7d4801af2a59270da0e9fc8f1b71162",
+      "fetched_at": "2026-11-01T03:50:13.471582+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/core-concepts/actions.html",
+      "title": "Action | Pinia",
+      "file": "zh__core-concepts__actions-ce9663.md",
+      "chars": 4511,
+      "sha256": "30219c9c18595fa7304924acd87622e96e26792f1c6eeec2cd392081152adbf8",
+      "fetched_at": "2026-11-01T03:50:14.184403+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/core-concepts/getters.html",
+      "title": "Getter | Pinia",
+      "file": "zh__core-concepts__getters-a6bb55.md",
+      "chars": 4830,
+      "sha256": "bc1896745513019ac89b9c1d0f679197cb21b70174b4d95db67ab13bdb982928",
+      "fetched_at": "2026-11-01T03:50:14.678606+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/core-concepts",
+      "title": "定义 Store | Pinia",
+      "file": "zh__core-concepts-35a530.md",
+      "chars": 4133,
+      "sha256": "676a74dbf86339966a06eda52de58a92078365807ba698c146812e946afcd21c",
+      "fetched_at": "2026-11-01T03:50:15.141099+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/core-concepts/outside-component-usage.html",
+      "title": "在组件外使用 store | Pinia",
+      "file": "zh__core-concepts__outside-component-usage-f08e6f.md",
+      "chars": 1451,
+      "sha256": "f51e9f7ce55f7a89c069f15ab378de4897a9cb69f3877dc726e0bf6678eff686",
+      "fetched_at": "2026-11-01T03:50:15.349552+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/core-concepts/plugins.html",
+      "title": "插件 | Pinia",
+      "file": "zh__core-concepts__plugins-f08d24.md",
+      "chars": 9136,
+      "sha256": "e8fbf6387a865709ed2a9cb4cb216301183552d62644bfa3a8df8b11ea8d54ba",
+      "fetched_at": "2026-11-01T03:50:16.059832+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/core-concepts/state.html",
+      "title": "State | Pinia",
+      "file": "zh__core-concepts__state-dc044c.md",
+      "chars": 5673,
+      "sha256": "c43137a1429a5e0fc30e4a8edd4f20611e6e2c407e54fbe68bc8b7761df6cb71",
+      "fetched_at": "2026-11-01T03:50:16.677104+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/getting-started.html",
+      "title": "开始 | Pinia",
+      "file": "zh__getting-started-c055ba.md",
+      "chars": 1691,
+      "sha256": "c725573cb1e4d409bfd586be8b8b8d8f9ff044f385704014487171c051c186ce",
+      "fetched_at": "2026-11-01T03:50:16.798839+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/introduction.html",
+      "title": "简介 | Pinia",
+      "file": "zh__introduction-2ecfc2.md",
+      "chars": 5258,
+      "sha256": "5e184957ed56a5063345540dcf27dca435bcdc53cd85109b5e5712b5acdb7a5d",
+      "fetched_at": "2026-11-01T03:50:17.380766+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/ssr",
+      "title": "服务端渲染 (SSR) | Pinia",
+      "file": "zh__ssr-7ed15b.md",
+      "chars": 2328,
+      "sha256": "413f62c67ac4e8d6ad3a5cd0c4680050efc08c10001a877e9fca6b4fd168b7e0",
+      "fetched_at": "2026-11-01T03:50:18.277332+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/ssr/nuxt.html",
+      "title": "Nuxt | Pinia",
+      "file": "zh__ssr__nuxt-1ad4d4.md",
+      "chars": 2662,
+      "sha256": "7c21f980641d6b31288b8f8bab0a0cb4de6e4b7b527b1aac6f182bb5835b4d6e",
+      "fetched_at": "2026-11-01T03:50:19.110159+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/enums/pinia.MutationType.html",
+      "title": "Enumeration: MutationType | Pinia",
+      "file": "zh__api__enums__pinia.MutationType-26fe1d.md",
+      "chars": 583,
+      "sha256": "b36629f524198d5a898dd903736ed60b4d5f2ea8a0af6dfe24466221c74d74a9",
+      "fetched_at": "2026-11-01T03:50:19.470370+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/interfaces/pinia.DefineSetupStoreOptions.html",
+      "title": "接口：DefineSetupStoreOptions<Id, S, G, A> | Pinia",
+      "file": "zh__api__interfaces__pinia.DefineSetupStoreOptions-922e3c.md",
+      "chars": 611,
+      "sha256": "be9bf449cc35f22ef7b219b1e7a96e95a4967517ff7ee44445ae9bf1f638ae34",
+      "fetched_at": "2026-11-01T03:50:19.922325+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/interfaces/pinia.DefineStoreOptions.html",
+      "title": "接口：DefineStoreOptions<Id, S, G, A> | Pinia",
+      "file": "zh__api__interfaces__pinia.DefineStoreOptions-75f470.md",
+      "chars": 1825,
+      "sha256": "102ecd03b91182a1540be1dc6f7039ba6a4a5ae31bd2260326e2118f7d693716",
+      "fetched_at": "2026-11-01T03:50:20.296994+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/interfaces/pinia.DefineStoreOptionsBase.html",
+      "title": "接口：DefineStoreOptionsBase<S, Store> | Pinia",
+      "file": "zh__api__interfaces__pinia.DefineStoreOptionsBase-dcc261.md",
+      "chars": 409,
+      "sha256": "90bb2484deb15d2d59367434e9e87d53c25ef5cf914da2138651960c035bd7a6",
+      "fetched_at": "2026-11-01T03:50:20.851258+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/interfaces/pinia.DefineStoreOptionsInPlugin.html",
+      "title": "接口：DefineStoreOptionsInPlugin<Id, S, G, A> | Pinia",
+      "file": "zh__api__interfaces__pinia.DefineStoreOptionsInPlugin-0e5100.md",
+      "chars": 1711,
+      "sha256": "b6fb9fe4a383d8d3d359f27a60addd51b499937fad990917688a656d87b9c599",
+      "fetched_at": "2026-11-01T03:50:21.296741+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/interfaces/pinia.Pinia.html",
+      "title": "接口：Pinia | Pinia",
+      "file": "zh__api__interfaces__pinia.Pinia-9cd7bb.md",
+      "chars": 598,
+      "sha256": "37d2a20d79b40564bb84fd11f67d9bb39b2fe9e51288802875cef0633d0a02d8",
+      "fetched_at": "2026-11-01T03:50:22.742564+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/interfaces/pinia.PiniaCustomProperties.html",
+      "title": "接口：PiniaCustomProperties<Id, S, G, A> | Pinia",
+      "file": "zh__api__interfaces__pinia.PiniaCustomProperties-982634.md",
+      "chars": 594,
+      "sha256": "d20323d4baf411a31855f629af59719f17f0131fa1ee84713d05b278d8f7ff18",
+      "fetched_at": "2026-11-01T03:50:23.036457+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/interfaces/pinia.PiniaPlugin.html",
+      "title": "接口：PiniaPlugin | Pinia",
+      "file": "zh__api__interfaces__pinia.PiniaPlugin-179bb3.md",
+      "chars": 670,
+      "sha256": "3c1cd09cf0ea719d847f1ffd14f207766d41b8e36ffae1318e22e6f5d180884b",
+      "fetched_at": "2026-11-01T03:50:24.122347+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/interfaces/pinia.StoreDefinition.html",
+      "title": "接口：StoreDefinition<Id, S, G, A> | Pinia",
+      "file": "zh__api__interfaces__pinia.StoreDefinition-955fa1.md",
+      "chars": 658,
+      "sha256": "1dae1d0248524a53d3eb69cf618e6bf66ad037aa90171366b613ad18b6996b7f",
+      "fetched_at": "2026-11-01T03:50:24.725605+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/interfaces/pinia.PiniaPluginContext.html",
+      "title": "接口：PiniaPluginContext<Id, S, G, A> | Pinia",
+      "file": "zh__api__interfaces__pinia.PiniaPluginContext-3dd452.md",
+      "chars": 603,
+      "sha256": "ba96fab3661b2b7b4e04ea1237c737a55a17d42449f350750aedd85c13e67335",
+      "fetched_at": "2026-11-01T03:50:25.017468+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/interfaces/pinia.StoreProperties.html",
+      "title": "接口：StoreProperties<Id> | Pinia",
+      "file": "zh__api__interfaces__pinia.StoreProperties-09230c.md",
+      "chars": 416,
+      "sha256": "a1c58ffa5fc41261d66166b8aaf9f05eab6e295777483b1005eb5d288ea7f26e",
+      "fetched_at": "2026-11-01T03:50:25.282309+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/interfaces/pinia.SubscriptionCallbackMutationDirect.html",
+      "title": "接口：SubscriptionCallbackMutationDirect | Pinia",
+      "file": "zh__api__interfaces__pinia.SubscriptionCallbackMutationDirect-05c4d0.md",
+      "chars": 636,
+      "sha256": "d8ef4cc2981a04b3fb93cfc37f4652274c703da1fd68d40cde5ab05e63ea3393",
+      "fetched_at": "2026-11-01T03:50:26.193809+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/interfaces/pinia.SubscriptionCallbackMutationPatchFunction.html",
+      "title": "接口：SubscriptionCallbackMutationPatchFunction | Pinia",
+      "file": "zh__api__interfaces__pinia.SubscriptionCallbackMutationPatchFunction-0b7681.md",
+      "chars": 622,
+      "sha256": "cbd25f2b63d91998226d12e9e95991633521bf447201afc0c5592fa1523c3619",
+      "fetched_at": "2026-11-01T03:50:26.254814+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/interfaces/pinia.SubscriptionCallbackMutationPatchObject.html",
+      "title": "接口：SubscriptionCallbackMutationPatchObject<S> | Pinia",
+      "file": "zh__api__interfaces__pinia.SubscriptionCallbackMutationPatchObject-42fedb.md",
+      "chars": 701,
+      "sha256": "8f3bfc11bc3cf4206bd1ead14d33f9b5b145d07e7e3c1ae4e824a9a442a325cf",
+      "fetched_at": "2026-11-01T03:50:26.732716+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/interfaces/pinia._StoreOnActionListenerContext.html",
+      "title": "接口：_StoreOnActionListenerContext<Store, ActionName, A> | Pinia",
+      "file": "zh__api__interfaces__pinia._StoreOnActionListenerContext-d07275.md",
+      "chars": 1271,
+      "sha256": "a4c6aaf7e16f7692e50bde24010ceee3e3f6422d960caee713a76f74a4f6ffa9",
+      "fetched_at": "2026-11-01T03:50:27.291339+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/interfaces/pinia._StoreWithState.html",
+      "title": "接口：_StoreWithState<Id, S, G, A> | Pinia",
+      "file": "zh__api__interfaces__pinia._StoreWithState-03780f.md",
+      "chars": 3186,
+      "sha256": "493af0c6bdeeb3414d2f44b7050a6b1e8da98d75f9aedc19768f3e054c8c7f15",
+      "fetched_at": "2026-11-01T03:50:27.985791+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/interfaces/pinia._SubscriptionCallbackMutationBase.html",
+      "title": "接口：_SubscriptionCallbackMutationBase | Pinia",
+      "file": "zh__api__interfaces__pinia._SubscriptionCallbackMutationBase-b2e032.md",
+      "chars": 489,
+      "sha256": "bd59f9d6c465fe9feea58ccc651f6de0c5bf92140f57f2ed8533235010e43201",
+      "fetched_at": "2026-11-01T03:50:28.281350+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/interfaces/pinia_nuxt.ModuleOptions.html",
+      "title": "接口：ModuleOptions | Pinia",
+      "file": "zh__api__interfaces__pinia_nuxt.ModuleOptions-8a012e.md",
+      "chars": 595,
+      "sha256": "58deff539d9164ab607fe4245aeee81d0bf33b16dfdc9fedb8c535441f0574f9",
+      "fetched_at": "2026-11-01T03:50:29.033155+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/interfaces/pinia_testing.TestingOptions.html",
+      "title": "接口：TestingOptions | Pinia",
+      "file": "zh__api__interfaces__pinia_testing.TestingOptions-6d2cf1.md",
+      "chars": 1330,
+      "sha256": "4b442beeb090132fafbb7b24454080632c247dca812c66c2c632eeb15204828a",
+      "fetched_at": "2026-11-01T03:50:29.315498+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/interfaces/pinia_testing.TestingPinia.html",
+      "title": "接口：TestingPinia | Pinia",
+      "file": "zh__api__interfaces__pinia_testing.TestingPinia-810e01.md",
+      "chars": 708,
+      "sha256": "57f8a19f7474f2fc7715efed6c48debae96b818255ea399c1a54aa42e827c2b1",
+      "fetched_at": "2026-11-01T03:50:30.083576+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/modules/pinia.html",
+      "title": "模块：pinia | Pinia",
+      "file": "zh__api__modules__pinia-41e113.md",
+      "chars": 20258,
+      "sha256": "9e4087a8f3fe3fc88eaea79aed1243a7a29d79485ebf9b97f448d5104bc6d2c4",
+      "fetched_at": "2026-11-01T03:50:30.393647+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/modules/pinia_testing.html",
+      "title": "模块：@pinia/testing | Pinia",
+      "file": "zh__api__modules__pinia_testing-944fb4.md",
+      "chars": 519,
+      "sha256": "f39e1b4bc497d000d33647f020b7fc72ad90ae2e6fd6a7a32bdc8a255300768d",
+      "fetched_at": "2026-11-01T03:50:31.317163+00:00",
+      "depth": 0
+    }
+  ],
+  "errors": [
+    {
+      "url": "https://pinia.vuejs.org/zh/api",
+      "error": "正文过短，跳过"
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/cookbook",
+      "error": "正文过短，跳过"
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/interfaces/pinia.MapStoresCustomization.html",
+      "error": "正文过短，跳过"
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/interfaces/pinia.PiniaCustomStateProperties.html",
+      "error": "正文过短，跳过"
+    },
+    {
+      "url": "https://pinia.vuejs.org/zh/api/modules/pinia_nuxt.html",
+      "error": "正文过短，跳过"
+    }
+  ]
+}
