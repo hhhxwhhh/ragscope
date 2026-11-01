@@ -139,6 +139,49 @@ Agent 路径用 `langchain.agents.create_agent` 编译一张 LangGraph ReAct 状
 
 > 样本只有 29 条，差异小于 5 个点不应该当成结论，README 里保留这些数字主要是为了说明流程，而不是证明某组参数最优。
 
+### 真实语料评测：143 篇文档 / 26 条手工标注
+
+上面那组数字跑在 15 个 chunk 的玩具语料上。真正有说服力的是这一组：把仓库自带的三个
+真实语料包（Vue 3 / Vite / Vue Router 官方中文文档，**143 篇、69 万字符**）导入同一个
+知识库，然后**手工标注 26 条用例**（22 条可答 + 4 条语料外不可答）。
+
+标注方式见 `backend/scripts/make_eval_dataset.py`：先按 URL 锁定目标文档页，再通读该页
+chunk 挑出真正回答问题的那些。**gold 标签不能用被测系统自己生成**——让检索器挑自己的
+标准答案，每个 recall 数字都会变成同义反复。
+
+| 配置 | Recall@1 | Recall@5 | Recall@10 | MRR | Hit@5 | P50 检索耗时 |
+|---|---:|---:|---:|---:|---:|---:|
+| 基线：top 20 → final 5，`min_vector_score` 0.45 | 20.5% | 47.7% | 47.7% | 0.409 | 59.1% | 435 ms |
+| 放宽：top 30 → final 10，阈值 0.35，开多查询 | 22.7% | **59.1%** | **63.6%** | **0.445** | **68.2%** | 1172 ms |
+
+两组各有代价，这里没有免费的提升：
+
+1. **基线里 Recall@10 等于 Recall@5，一分没涨。** 天花板不是检索器，是 `final_top_k=5`——
+   候选根本没被放出来。不动任何模型、只把候选放出来，Recall@10 就涨了 33%。
+   这类问题靠盯模型是看不出来的，只能靠 Recall@k 曲线是平的这件事发现。
+2. **代价是 P50 从 435 ms 涨到 1172 ms（2.7 倍）**，因为多查询要额外一轮 embedding。
+   如果接口对延迟敏感，这个交换不划算。
+
+绝对数值（Recall@5 约 48%–59%）比玩具语料低得多，这是应该的：143 篇里大量页面
+互相很像（Vue 3 的 `watch` 和 Vue Router 的守卫都讲「回调」「触发时机」），
+而且比较类问题的答案横跨两块 chunk，标 2 块意味着必须两块都进 top-k 才算满分。
+
+生成侧（开启 grounded 提示 + 事实性裁判）：
+
+| 指标 | 数值 |
+|---|---:|
+| 答案事实性接地率 | 97.1% |
+| 事实性达标率 | 100% |
+| 回答引用合规率 | 100% |
+| 生成拒答准确率 | 100%（4 条不可答全部正确拒答） |
+| 生成误拒答率 | 4.5%（22 条可答里 1 条误拒） |
+
+这里有一个**反直觉但重要的发现**：检索层的拒答准确率是 **0 / 4**。四条语料外问题
+（差旅报销、美国签证、年假天数、Kubernetes）全部召回了 5 个候选，一条都没被
+`min_vector_score` 挡住——小 embedding 模型对完全无关的两段中文也会给出不低的相似度。
+**真正挡住幻觉的是生成层的 grounded 提示，不是检索层的分数阈值。**
+这个结论是测出来的，不是推理出来的；也正因为如此，才有必要再加一层事实性裁判。
+
 ### 路由评测
 
 同一份 29 条用例还标注了「期望走哪条路」：27 条标 `rag`（其中 3 条是不可答案例），2 条需要跨文档比较或多步检索的问题标 `agent`。在「路由评测」页：
@@ -252,13 +295,28 @@ rag_learn/
 
 ## 本地启动
 
-前置：Python 3.12、Node 20、Docker Desktop。第一次启动会从 Hugging Face 镜像下载 embedding 和 reranker 模型。
+前置：Python 3.12、Node 20，以及 PostgreSQL 与 Redis（Docker 或本机二进制都行）。
+第一次启动会从 Hugging Face 镜像下载 embedding 和 reranker 模型。
 
 ```bash
 cp .env.example .env
 # 至少要填 SECRET_KEY 和 DEEPSEEK_API_KEY；.env 已在 .gitignore 中
-docker compose up -d db redis
+make dev-db          # 有 Docker：起 Postgres + Redis
 ```
+
+**没有 Docker 也能跑完整链路**（`make dev-db` 只有一条 `docker compose up`，
+机器上没 Docker 就等于迁移跑不了、集成测试跑不了、"检索到底能不能用"这个问题
+永远没有答案）。用本机已有的 PG / Redis 二进制：
+
+```bash
+make dev-db-native   # PG 5433 + Redis 6380，正好是 .env.example 的默认值
+make dev-db-stop
+```
+
+脚本在 `scripts/dev_stack.sh`，二进制路径可用 `PG_BIN` / `REDIS_BIN` 覆盖。
+它会自动 `initdb`、建 `ragscope` 角色与库，并处理一个 Windows 特有的坑：
+PostgreSQL 在 Windows 上建不了 unix socket 锁文件，会直接拒绝启动，所以脚本
+会往 `postgresql.conf` 写入 `unix_socket_directories = ''`（只留 TCP）。
 
 后端：
 
@@ -469,8 +527,8 @@ cd backend
 .venv/Scripts/python.exe -m pytest -q
 ```
 
-- 120 个测试，`tests/unit` 覆盖解析器（Markdown / DOCX / 空白 PDF）、页码映射、切块、RRF、指标计算、路由报告（准确率 / precision / recall / F1 / 混淆矩阵 / 未标注处理）、Prompt 注册表（默认变体、未知变体、固定拒答句、构建缓存）、生成指标聚合与拒答识别、JWT、多查询解析、检索缓存 key、引用统计、自动路由信号与回退，以及用脚本化 fake model 跑真实 LangGraph 图验证 Agent 工具调用、参数校验、证据去重、步数预算、token 汇总与模型失败时的 fail-open；`tests/integration` 覆盖注册/登录/刷新轮换/登出、登录限流、知识库越权 404、评测数据集校验、期望路径的 PATCH 语义与路由报告、Prompt 列表接口、生成评测的答案落库 / prompt 归因 / 无 key 拒绝、后台执行器、运行对比、stale 运行恢复、反馈增删改与转评测用例、人工抽检队列的筛选 / 校验 / 越权 404 / 转回归用例、会话搜索/重命名/导出，以及未配置 LLM key 时 Agent / auto 接口的 503。
-- 集成测试使用独立数据库 `ragscope_test` 和 Redis DB 1；session 开始时自动建库并跑迁移，每个测试前清空表和 Redis。
+- 249 个测试（203 单元 + 46 集成），`tests/unit` 覆盖解析器（Markdown / DOCX / 空白 PDF）、页码映射、切块、RRF、指标计算、路由报告（准确率 / precision / recall / F1 / 混淆矩阵 / 未标注处理）、Prompt 注册表（默认变体、未知变体、固定拒答句、构建缓存）、生成指标聚合与拒答识别、JWT、多查询解析、检索缓存 key、引用统计、自动路由信号与回退，以及用脚本化 fake model 跑真实 LangGraph 图验证 Agent 工具调用、参数校验、证据去重、步数预算、token 汇总与模型失败时的 fail-open；`tests/integration` 覆盖注册/登录/刷新轮换/登出、登录限流、知识库越权 404、评测数据集校验、期望路径的 PATCH 语义与路由报告、Prompt 列表接口、生成评测的答案落库 / prompt 归因 / 无 key 拒绝、后台执行器、运行对比、stale 运行恢复、反馈增删改与转评测用例、人工抽检队列的筛选 / 校验 / 越权 404 / 转回归用例、会话搜索/重命名/导出，以及未配置 LLM key 时 Agent / auto 接口的 503。
+- 集成测试使用独立数据库 `ragscope_test` 和 Redis DB 1；收集到集成用例时才建库并跑迁移（纯 `pytest tests/unit` 不碰数据库），每个测试前清空表和 Redis。本机跑 `make dev-db-native` 起好 PG/Redis 后，`pytest -q` 可在约 6 分钟跑完全部 249 条。
 - 评测执行器测试 mock 掉 `retrieve`，CI 只装 `.[dev]`，不需要下载 torch。
 - GitHub Actions 分两个 job：后端 ruff + pytest（PostgreSQL/Redis service），前端 typecheck + build。配置在 [.github/workflows/ci.yml](.github/workflows/ci.yml)。
 

@@ -54,9 +54,27 @@ async def store_refresh_token(
     await redis.set(f"refresh:{jti}", user_id, ex=ttl_seconds)
 
 
+# GET + DEL as one script. The reason this is not ``GETDEL``: that command only
+# exists on Redis >= 6.2, and running against an older server (a local Redis 5,
+# a managed instance pinned to an old version) turned every refresh into a
+# 500 instead of a rotation. A script keeps the read-then-delete atomic — which
+# is the entire point here, since a concurrent refresh must not be able to read
+# the same jti twice — and works on any server with EVAL (2.6+).
+_CONSUME_REFRESH_SCRIPT = """
+local value = redis.call('GET', KEYS[1])
+if value then redis.call('DEL', KEYS[1]) end
+return value
+"""
+
+
 async def consume_refresh_token(redis: Redis, jti: str) -> str | None:
     """Consume a refresh jti atomically; a token can only be used once."""
-    return await redis.getdel(f"refresh:{jti}")
+    result = await redis.eval(_CONSUME_REFRESH_SCRIPT, 1, f"refresh:{jti}")
+    if result is None:
+        return None
+    if isinstance(result, bytes):
+        return result.decode("utf-8")
+    return str(result)
 
 
 async def revoke_refresh_token(redis: Redis, jti: str) -> None:

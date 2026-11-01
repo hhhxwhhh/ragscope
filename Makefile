@@ -8,8 +8,8 @@ BACKEND := backend
 FRONTEND := frontend
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev-db migrate seed seed-eval graph test test-all lint fmt typecheck \
-        web-dev web-build up down logs eval-smoke mcp
+.PHONY: help install dev-db dev-db-native dev-db-stop migrate seed seed-eval graph \
+        test test-all lint fmt typecheck web-dev web-build up down logs eval-smoke mcp
 
 help: ## 列出所有命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -18,8 +18,14 @@ install: ## 安装后端(含 dev)与前端依赖
 	cd $(BACKEND) && python -m venv .venv && $(PY) -m pip install -e ".[dev]"
 	cd $(FRONTEND) && npm ci
 
-dev-db: ## 启动本地 PostgreSQL + Redis
+dev-db: ## 启动本地 PostgreSQL + Redis（Docker）
 	docker compose up -d db redis
+
+dev-db-native: ## 无 Docker 时用本机二进制启动 PG(5433) + Redis(6380)
+	bash scripts/dev_stack.sh start
+
+dev-db-stop: ## 停止本机原生 PG + Redis
+	bash scripts/dev_stack.sh stop
 
 migrate: ## 执行数据库迁移
 	cd $(BACKEND) && $(PY) -m alembic upgrade head
