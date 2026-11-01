@@ -33,8 +33,11 @@ migrate: ## 执行数据库迁移
 seed: ## 灌入演示账号、知识库、文档与评测集
 	cd $(BACKEND) && PYTHONPATH=. $(PY) scripts/seed_demo.py
 
-seed-eval: ## 只重建评测数据集
+seed-eval: ## 只重建评测数据集（演示语料）
 	cd $(BACKEND) && PYTHONPATH=. $(PY) scripts/seed_eval.py
+
+eval-dataset: ## 在真实语料上重建手工标注的评测集，需要传 KB=<uuid>
+	cd $(BACKEND) && PYTHONPATH=. $(PY) scripts/make_eval_dataset.py $(KB)
 
 graph: ## 为所有知识库构建知识图谱（消耗 token）
 	cd $(BACKEND) && PYTHONPATH=. $(PY) scripts/build_graph.py --all
