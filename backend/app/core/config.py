@@ -81,6 +81,11 @@ class Settings(BaseSettings):
     multi_query_timeout_seconds: float = 8.0
     retrieval_cache_enabled: bool = True
     retrieval_cache_ttl_seconds: int = 300
+    # Sentence-window expansion: how many chunks on each side of a selected
+    # chunk are pulled into the context. 0 disables it (chunks are returned as
+    # indexed); it is off by default because it multiplies prompt tokens by
+    # roughly 2 * window_size + 1.
+    window_size: int = 0
     # Semantic answer cache (embedding similarity over recent questions)
     # 0 = unlimited. Applies per knowledge base per UTC day.
     daily_token_budget: int = 0

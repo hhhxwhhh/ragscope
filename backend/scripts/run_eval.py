@@ -9,7 +9,7 @@ restarting the machine or changing a config knob.
 Usage
 -----
     PYTHONPATH=. python scripts/run_eval.py --kb <uuid>
-        [--candidate-top-k 20] [--final-top-k 5] [--min-score 0.45]
+        [--candidate-top-k 20] [--final-top-k 5] [--min-score 0.45] [--window 1]
         [--no-rerank] [--no-crag] [--no-multi-query] [--no-compress] [--generation]
 
 Override flags map onto :class:`~app.schemas.eval.RetrievalConfigIn`; anything
@@ -46,6 +46,8 @@ HEADLINE = (
     "recall@10",
     "mrr",
     "hit@5",
+    "doc_hit@5",
+    "avg_context_chars",
     "refusal_accuracy",
     "false_refusal_rate",
     "citation_compliance",
@@ -83,6 +85,7 @@ async def main(args: argparse.Namespace) -> int:
             ("candidate_top_k", "fusion_top_k"),
             ("final_top_k", "final_top_k"),
             ("min_score", "min_vector_score"),
+            ("window", "window_size"),
         ):
             value = getattr(args, flag)
             if value is not None:
@@ -92,9 +95,19 @@ async def main(args: argparse.Namespace) -> int:
             ("no_crag", "use_crag"),
             ("no_multi_query", "use_multi_query"),
             ("no_compress", "use_compress"),
+            ("no_graph", "use_graph"),
         ):
             if getattr(args, flag):
                 overrides[key] = False
+        # Positive switches for the knobs that are off by default — without them
+        # an A/B against CRAG / multi-query would need a code edit.
+        for flag, key in (
+            ("crag", "use_crag"),
+            ("multi_query", "use_multi_query"),
+            ("compress", "use_compress"),
+        ):
+            if getattr(args, flag):
+                overrides[key] = True
 
         payload = EvalRunCreate(
             config=RetrievalConfigIn(**overrides) if overrides else None,
@@ -120,10 +133,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--candidate-top-k", type=int, help="融合后保留的候选数")
     parser.add_argument("--final-top-k", type=int, help="截断到最终上下文的条数")
     parser.add_argument("--min-score", type=float, help="向量相似度下限")
+    parser.add_argument("--window", type=int, help="句窗扩展：召回块带上前后 N 个相邻块")
     parser.add_argument("--no-rerank", action="store_true", help="关闭重排")
     parser.add_argument("--no-crag", action="store_true", help="关闭 CRAG 证据分级")
     parser.add_argument("--no-multi-query", action="store_true", help="关闭多查询扩展")
     parser.add_argument("--no-compress", action="store_true", help="关闭上下文压缩")
+    parser.add_argument("--no-graph", action="store_true", help="关闭知识图谱扩展")
+    parser.add_argument("--crag", action="store_true", help="开启 CRAG 证据分级与纠正式二次召回")
+    parser.add_argument("--multi-query", action="store_true", help="开启多查询扩展（消耗 LLM）")
+    parser.add_argument("--compress", action="store_true", help="开启上下文压缩")
     parser.add_argument("--generation", action="store_true", help="同时跑生成侧评测（消耗 LLM）")
     return parser.parse_args()
 

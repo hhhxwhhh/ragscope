@@ -223,6 +223,41 @@ def test_aggregate_metrics_adds_generation_metrics_only_when_present() -> None:
     assert metrics["generation_total_tokens"] == 80
 
 
+def test_sentence_window_counts_as_coverage() -> None:
+    """A window-expanded item really does carry the neighbour's text.
+
+    Scoring it as a hit is not metric inflation: the gold chunk is in the
+    context that reaches the prompt.
+    """
+    refs = [{"document_id": "doc-1", "chunk_index": 5}]
+    retrieved = [
+        {
+            "document_id": "doc-1",
+            "chunk_index": 4,
+            "window_indexes": [3, 4, 5],
+        }
+    ]
+
+    metrics = score_case(retrieved, refs, answerable=True)
+
+    assert metrics["recall@1"] == 1.0
+    assert metrics["mrr"] == 1.0
+    assert metrics["hit@5"] == 1.0
+
+
+def test_doc_hit_separates_wrong_chunk_from_wrong_page() -> None:
+    refs = [{"document_id": "doc-1", "chunk_index": 5}]
+    retrieved = [_candidate("doc-1", 9)]
+
+    metrics = score_case(retrieved, refs, answerable=True)
+
+    # Right page, wrong chunk: chunk-level recall stays 0 so the two failure
+    # modes never get conflated.
+    assert metrics["recall@1"] == 0.0
+    assert metrics["hit@5"] == 0.0
+    assert metrics["doc_hit@5"] == 1.0
+
+
 def test_retrieval_only_run_has_no_generation_metrics() -> None:
     results = [
         {

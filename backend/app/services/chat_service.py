@@ -487,7 +487,11 @@ async def _save_assistant_message(
         settings = get_settings()
         if settings.answer_grounding_enabled:
             try:
-                report = await faithfulness.check_faithfulness(content, outcome.candidates)
+                report = await faithfulness.check_faithfulness(
+                    content,
+                    outcome.candidates,
+                    max_context_chars=get_settings().max_context_chars,
+                )
                 message.faithfulness = report.to_dict()
             except Exception as exc:  # noqa: BLE001
                 logger.warning("answer grounding failed: %s", exc)

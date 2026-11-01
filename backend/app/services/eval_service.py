@@ -54,10 +54,12 @@ METRIC_LABELS = {
     "recall@5": "Recall@5",
     "recall@10": "Recall@10",
     "hit@5": "Hit@5",
+    "doc_hit@5": "文档级 Hit@5",
     "mrr": "MRR",
     "refusal_accuracy": "拒答准确率",
     "answerable_refusal_rate": "误拒答率",
     "avg_latency_ms": "平均检索耗时",
+    "avg_context_chars": "平均上下文字符数",
     "p50_latency_ms": "P50 耗时",
     "p95_latency_ms": "P95 耗时",
     "generation_refusal_accuracy": "生成拒答准确率",
@@ -425,6 +427,24 @@ def _relevant_set(refs: list[dict[str, Any]]) -> set[tuple[str, int]]:
     return {(str(ref["document_id"]), int(ref["chunk_index"])) for ref in refs}
 
 
+def _covered_pairs(candidate: dict[str, Any]) -> set[tuple[str, int]]:
+    """Chunk pairs a single retrieved item stands for.
+
+    Usually just its own (document, chunk_index). With sentence-window expansion
+    an item is the anchor chunk *plus* its neighbours, and the returned context
+    genuinely contains those chunks — so the window counts as coverage.
+    """
+    doc_id = str(candidate.get("document_id"))
+    anchor = int(candidate.get("chunk_index", -1))
+    covered = {(doc_id, anchor)}
+    covered.update(
+        (doc_id, int(index))
+        for index in (candidate.get("window_indexes") or [])
+        if index is not None
+    )
+    return covered
+
+
 def score_case(
     retrieved: list[dict[str, Any]],
     relevant_refs: list[dict[str, Any]],
@@ -434,7 +454,7 @@ def score_case(
     ranks = [
         rank
         for rank, candidate in enumerate(retrieved, start=1)
-        if (str(candidate.get("document_id")), int(candidate.get("chunk_index", -1))) in relevant
+        if _covered_pairs(candidate) & relevant
     ]
     first = ranks[0] if ranks else None
     recalled = {
@@ -443,9 +463,23 @@ def score_case(
         else 0.0
         for k in RECALL_KS
     }
+    # Document-level hit: the top-k reached the right page at all, even if not
+    # the labelled chunk inside it. Reported next to hit@5 because a gap between
+    # the two means "right page, wrong chunk" — a chunking problem, not a
+    # retrieval problem, and the two have completely different fixes.
+    gold_docs = {str(ref["document_id"]) for ref in relevant_refs}
+    doc_first = next(
+        (
+            rank
+            for rank, candidate in enumerate(retrieved, start=1)
+            if str(candidate.get("document_id")) in gold_docs
+        ),
+        None,
+    )
     metrics: dict[str, Any] = {
         **recalled,
         "hit@5": 1.0 if first is not None and first <= 5 else 0.0,
+        "doc_hit@5": 1.0 if doc_first is not None and doc_first <= 5 else 0.0,
         "mrr": 1.0 / first if first is not None else 0.0,
         "first_relevant_rank": first,
         "retrieved_count": len(retrieved),
@@ -454,6 +488,7 @@ def score_case(
     if not answerable:
         # Unanswerable cases are scored by refusal, not recall.
         metrics["hit@5"] = 0.0
+        metrics["doc_hit@5"] = 0.0
         metrics["mrr"] = 0.0
         for k in RECALL_KS:
             metrics[f"recall@{k}"] = 0.0
@@ -521,6 +556,7 @@ def aggregate_metrics(
     for k in RECALL_KS:
         metrics[f"recall@{k}"] = avg(answerable, f"recall@{k}")
     metrics["hit@5"] = avg(answerable, "hit@5")
+    metrics["doc_hit@5"] = avg(answerable, "doc_hit@5")
     metrics["mrr"] = avg(answerable, "mrr")
     metrics["refusal_accuracy"] = (
         round(
@@ -539,6 +575,9 @@ def aggregate_metrics(
         else 0.0
     )
     metrics["avg_latency_ms"] = round(mean(latencies), 1) if latencies else 0.0
+    metrics["avg_context_chars"] = round(
+        mean([float(item["metrics"].get("context_chars", 0)) for item in ok]), 1
+    ) if ok else 0.0
     metrics["p50_latency_ms"] = _percentile(latencies, 0.50)
     metrics["p95_latency_ms"] = _percentile(latencies, 0.95)
 
@@ -709,6 +748,7 @@ def _retrieved_summary(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]
         "bm25_rank",
         "fused_score",
         "rerank_score",
+        "window_indexes",
     )
     return [
         {
@@ -782,7 +822,11 @@ async def _generate_case(
     # it instead of polluting the average.
     if not refused and get_settings().deepseek_api_key:
         try:
-            report = await faithfulness_check.check_faithfulness(answer, candidates)
+            report = await faithfulness_check.check_faithfulness(
+                answer,
+                candidates,
+                max_context_chars=get_settings().max_context_chars,
+            )
             if report.source == "llm":
                 metrics["faithfulness_ratio"] = report.grounded_ratio
                 metrics["faithfulness_grounded"] = report.grounded
@@ -847,6 +891,13 @@ async def execute_run(run_id: UUID) -> None:
                     latency_ms = int((time.perf_counter() - case_started) * 1000)
                     retrieved = _retrieved_summary(outcome.candidates)
                     metrics = score_case(retrieved, case.relevant_refs, case.answerable)
+                    # Prompt cost of this case. Recall is free to improve by
+                    # stuffing the context, so every recall number needs the
+                    # token bill next to it before anyone calls it a win.
+                    metrics["context_chars"] = sum(
+                        len(candidate.get("content") or "")
+                        for candidate in outcome.candidates
+                    )
                     error = None
                     if run.include_generation:
                         answer, gen_metrics = await _generate_case(

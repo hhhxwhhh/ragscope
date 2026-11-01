@@ -16,11 +16,13 @@ from functools import partial
 from typing import Any
 
 import anyio
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import metrics
 from app.core.config import get_settings
 from app.core.tracing import span
+from app.models.chunk import Chunk
 from app.models.knowledge_base import KnowledgeBase
 from app.rag import bm25_index, retrieval_cache, vector_store
 from app.rag.embedder import embed_texts_async
@@ -61,6 +63,10 @@ class RetrievalConfig:
     # Contextual compression of the final context.
     use_compress: bool = False
     compress_mode: str = "lexical"
+    # Sentence-window expansion. 0 means "return chunks exactly as indexed";
+    # 1 means every selected chunk is returned together with its immediate
+    # neighbours so an answer that straddles a chunk boundary is not lost.
+    window_size: int = 0
 
     @classmethod
     def from_kb(cls, kb: KnowledgeBase) -> "RetrievalConfig":
@@ -124,6 +130,7 @@ class RetrievalConfig:
             ),
             use_compress=_clamp_bool(raw, "use_compress", settings.compress_enabled),
             compress_mode=_mode(raw, "compress_mode", settings.compress_mode),
+            window_size=_clamp_int(raw, "window_size", settings.window_size, 0, 3),
         )
 
 
@@ -196,6 +203,7 @@ def _trace_candidate(candidate: dict[str, Any], content_chars: int = 400) -> dic
         "graph_via",
         "crag_via",
         "compressed",
+        "window_indexes",
     )
     payload = {key: candidate.get(key) for key in keys}
     payload["content"] = (candidate.get("content") or "")[:content_chars]
@@ -255,6 +263,86 @@ def _merge_bm25_hit(
     candidate["bm25_rank"] = min(candidate.get("bm25_rank") or rank, rank)
     if query_index not in candidate["matched_queries"]:
         candidate["matched_queries"].append(query_index)
+
+
+async def _expand_windows(
+    db: AsyncSession,
+    candidates: list[dict[str, Any]],
+    window_size: int,
+) -> dict[str, Any]:
+    """Grow each selected chunk into a window of ±window_size neighbours.
+
+    Chunking is a compromise: a section that would answer the question is often
+    split across two chunks, and the retriever then returns the half that does
+    not contain the answer. Pulling in the neighbours of a selected chunk keeps
+    the top-k *slots* unchanged (so ranking metrics stay comparable) while the
+    context each slot carries stops being cut at an arbitrary boundary.
+
+    Overlaps are dropped: if a neighbour is already covered by an earlier
+    candidate's window it is not concatenated twice, otherwise two adjacent hits
+    would double-charge the prompt for the same text.
+
+    Content is overwritten in place with the merged text and the covered
+    indexes are recorded in ``window_indexes``, so evaluation can score a hit
+    against the whole window instead of the anchor alone.
+    """
+    payload: dict[str, Any] = {
+        "applied": False,
+        "window_size": window_size,
+        "expanded": 0,
+        "added_chunks": 0,
+        "added_chars": 0,
+    }
+    if window_size <= 0 or not candidates:
+        return payload
+
+    wanted: dict[str, set[int]] = {}
+    for candidate in candidates:
+        doc_id = str(candidate.get("document_id"))
+        index = int(candidate.get("chunk_index") or 0)
+        wanted.setdefault(doc_id, set()).update(
+            i for i in range(index - window_size, index + window_size + 1) if i >= 0
+        )
+
+    neighbours: dict[tuple[str, int], Chunk] = {}
+    for doc_id, indexes in wanted.items():
+        rows = (
+            await db.execute(
+                select(Chunk).where(
+                    Chunk.document_id == doc_id,
+                    Chunk.chunk_index.in_(sorted(indexes)),
+                )
+            )
+        ).scalars().all()
+        for row in rows:
+            neighbours[(doc_id, row.chunk_index)] = row
+
+    covered: set[tuple[str, int]] = set()
+    for candidate in candidates:
+        doc_id = str(candidate.get("document_id"))
+        index = int(candidate.get("chunk_index") or 0)
+        indexes = [
+            i
+            for i in range(index - window_size, index + window_size + 1)
+            if i >= 0 and (doc_id, i) not in covered and (doc_id, i) in neighbours
+        ]
+        if not indexes:
+            continue
+        covered.update((doc_id, i) for i in indexes)
+        parts: list[str] = []
+        for i in indexes:
+            chunk = neighbours[(doc_id, i)]
+            heading = chunk.heading_path or ""
+            prefix = f"{heading}\n" if heading else ""
+            parts.append(prefix + chunk.content)
+        original_chars = len(candidate.get("content") or "")
+        candidate["content"] = "\n".join(parts)
+        candidate["window_indexes"] = indexes
+        payload["expanded"] += 1
+        payload["added_chunks"] += len(indexes) - 1
+        payload["added_chars"] += len(candidate["content"]) - original_chars
+    payload["applied"] = payload["expanded"] > 0
+    return payload
 
 
 async def _relaxed_search(
@@ -626,6 +714,23 @@ async def _retrieve(
             ]
         timings["graph_ms"] = _ms(started)
 
+    # 8.5 Sentence-window expansion: widen the final context, not the ranking.
+    # It runs after the top-k is fixed so the number of slots — and therefore
+    # every ranking metric — stays comparable with a windowless run.
+    window_payload: dict[str, Any] = {
+        "applied": False,
+        "window_size": config.window_size,
+        "expanded": 0,
+        "added_chunks": 0,
+        "added_chars": 0,
+    }
+    if config.window_size > 0 and final_candidates:
+        started = time.perf_counter()
+        window_payload = await _expand_windows(
+            db, final_candidates, config.window_size
+        )
+        timings["window_ms"] = _ms(started)
+
     # 9. Contextual compression: drop the sentences that do not carry evidence.
     # Last stage on purpose — it runs on the exact list that becomes the prompt,
     # including graph and CRAG additions, so the token saving is real rather than
@@ -676,6 +781,7 @@ async def _retrieve(
         "stage_timings": timings,
         "graph": graph_payload,
         "crag": crag_payload,
+        "window": window_payload,
         "compress": compress_payload,
         "counts": {
             "vector": len(vector_trace),

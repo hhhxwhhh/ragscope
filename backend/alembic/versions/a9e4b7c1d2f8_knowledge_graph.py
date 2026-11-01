@@ -128,7 +128,9 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name=op.f("pk_chunk_entities")),
         sa.UniqueConstraint("chunk_id", "entity_id", name="uq_chunk_entities_pair"),
     )
-    op.create_index(op.f("ix_chunk_entities_chunk_id"), "chunk_entities", ["chunk_id"], unique=False)
+    op.create_index(
+        op.f("ix_chunk_entities_chunk_id"), "chunk_entities", ["chunk_id"], unique=False
+    )
     op.create_index(
         op.f("ix_chunk_entities_entity_id"), "chunk_entities", ["entity_id"], unique=False
     )

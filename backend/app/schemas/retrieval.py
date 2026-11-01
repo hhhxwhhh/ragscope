@@ -30,6 +30,10 @@ class RetrievalConfigIn(BaseModel):
     crag_retry_add_limit: int | None = Field(default=None, ge=0, le=10)
     use_compress: bool | None = None
     compress_mode: str | None = Field(default=None, pattern="^(lexical|llm)$")
+    # Sentence-window expansion: 0 keeps chunks as indexed, 1 pulls in the
+    # immediate neighbours of every selected chunk. Exposed so the effect on
+    # chunk-level recall can be A/B'd instead of argued about.
+    window_size: int | None = Field(default=None, ge=0, le=3)
 
 
 class DebugRequest(BaseModel):
@@ -56,6 +60,7 @@ class CandidateOut(BaseModel):
     graph_via: str | None = None
     crag_via: str | None = None
     compressed: bool | None = None
+    window_indexes: list[int] | None = None
 
 
 class DebugResponse(BaseModel):
@@ -75,4 +80,5 @@ class DebugResponse(BaseModel):
     candidates: dict[str, list[CandidateOut]]
     graph: dict[str, Any] = Field(default_factory=dict)
     crag: dict[str, Any] = Field(default_factory=dict)
+    window: dict[str, Any] = Field(default_factory=dict)
     compress: dict[str, Any] = Field(default_factory=dict)

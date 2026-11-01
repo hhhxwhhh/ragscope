@@ -10,7 +10,7 @@ FRONTEND := frontend
 .DEFAULT_GOAL := help
 .PHONY: help install dev-db dev-db-native dev-db-stop migrate seed seed-eval graph \
         test test-all lint fmt typecheck web-dev web-build up down logs eval-smoke mcp \
-        eval-dataset eval-run eval-breakdown eval-ab
+        eval-dataset eval-run eval-breakdown eval-ab eval-misses eval-diagnose eval-window
 
 help: ## 列出所有命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -50,6 +50,16 @@ eval-ab: ## 基线 vs 放开 final_top_k 的对照（验证 Recall@k 曲线的�
 	cd $(BACKEND) && PYTHONPATH=. HF_HUB_OFFLINE=1 $(PY) scripts/run_eval.py --kb $(KB)
 	cd $(BACKEND) && PYTHONPATH=. HF_HUB_OFFLINE=1 $(PY) scripts/run_eval.py --kb $(KB) \
 		--candidate-top-k 30 --final-top-k 10 --min-score 0.35
+
+eval-window: ## 句窗扩展 ±1 的对照（块级召回 vs 上下文成本）
+	cd $(BACKEND) && PYTHONPATH=. HF_HUB_OFFLINE=1 $(PY) scripts/run_eval.py --kb $(KB)
+	cd $(BACKEND) && PYTHONPATH=. HF_HUB_OFFLINE=1 $(PY) scripts/run_eval.py --kb $(KB) --window 1
+
+eval-misses: ## 列出某一轮零召回用例的明细（gold 块 vs 实际召回），需要传 RUN=<uuid>
+	cd $(BACKEND) && PYTHONPATH=. $(PY) scripts/eval_misses.py $(RUN)
+
+eval-diagnose: ## 拆分某一轮的错失粒度：块级 / 同章节 / 同文档，需要传 RUN=<uuid>
+	cd $(BACKEND) && PYTHONPATH=. $(PY) scripts/eval_diagnose.py $(RUN)
 
 graph: ## 为所有知识库构建知识图谱（消耗 token）
 	cd $(BACKEND) && PYTHONPATH=. $(PY) scripts/build_graph.py --all

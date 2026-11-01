@@ -14,6 +14,8 @@ class _StubSettings:
     answer_grounding_enabled = True
     answer_grounding_threshold = 0.5
     answer_grounding_timeout_seconds = 8.0
+    # Same budget the answer prompt uses — see test_judge_sees_every_source_*.
+    max_context_chars = 6000
 
 
 @pytest.fixture
@@ -66,11 +68,25 @@ def test_context_block_truncates_to_max_chars():
     assert "[文档 1]" in block
 
 
-def test_context_block_uses_top_candidates_only():
+def test_judge_sees_every_source_the_answer_may_cite():
+    """The judge's evidence set must match the answer prompt's.
+
+    An earlier version capped the judge at the first 8 candidates and 3000
+    chars while the prompt used ``max_context_chars`` (6000). With
+    sentence-window expansion that mismatch made grounded claims look
+    ungrounded — the rate fell 12 points for a reason that had nothing to do
+    with the model. Trimming the evidence a judge may look at is not an
+    optimisation, it is a different question being asked.
+    """
     candidates = [{"content": f"doc{i} content"} for i in range(20)]
     block = f._context_block(candidates)
-    assert "[文档 8]" in block
-    assert "[文档 9]" not in block
+    assert "[文档 20]" in block
+
+    windowed = [{"content": "x" * 900} for _ in range(5)]
+    block = f._context_block(windowed)
+    # 5 x 900 = 4500 chars: inside the 6000 budget, so nothing may be dropped.
+    assert "[文档 5]" in block
+    assert "…" not in block
 
 
 async def test_check_faithfulness_fail_open_without_api_key(stub_settings):

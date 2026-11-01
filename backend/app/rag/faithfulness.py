@@ -59,20 +59,33 @@ class FaithfulnessReport:
         }
 
 
-def _context_block(candidates: list[dict], max_chars: int = 3000) -> str:
+def _context_block(candidates: list[dict], max_chars: int | None = None) -> str:
+    """Render the evidence the way the answer prompt rendered it.
+
+    The budget defaults to ``max_context_chars`` — the same cap the answer
+    prompt uses — because a judge that sees *less* than the model did calls
+    grounded claims ungrounded. That is exactly what happened when
+    sentence-window expansion tripled the context: generation used ~4.2k chars
+    while the judge still truncated at 3k, and the grounding rate fell 12 points
+    for a reason that had nothing to do with the model.
+
+    There is deliberately no cap on the number of candidates either: trimming
+    the tail would silently drop sources the answer is allowed to cite.
+    """
+    limit = max_chars if max_chars is not None else get_settings().max_context_chars
     parts: list[str] = []
     used = 0
-    for index, candidate in enumerate(candidates[:8], start=1):
+    for index, candidate in enumerate(candidates, start=1):
         # Retrieval candidates carry their chunk body under "content" — the same
         # key the compressor, the CRAG grader and the prompt builder all use.
         text = (candidate.get("content") or "").strip()
         if not text:
             continue
-        if used + len(text) > max_chars:
-            text = text[: max(0, max_chars - used)].rstrip() + "…"
+        if used + len(text) > limit:
+            text = text[: max(0, limit - used)].rstrip() + "…"
         parts.append(f"[文档 {index}] {text}")
         used += len(text)
-        if used >= max_chars:
+        if used >= limit:
             break
     return "\n\n".join(parts)
 
@@ -82,11 +95,14 @@ async def check_faithfulness(
     candidates: list[dict],
     *,
     timeout_seconds: float | None = None,
+    max_context_chars: int | None = None,
 ) -> FaithfulnessReport:
     """Judge whether ``answer`` is grounded in ``candidates``.
 
     Always returns a report; on any failure it is a fail-open fallback so the
-    caller can store it without special-casing errors.
+    caller can store it without special-casing errors. Pass
+    ``max_context_chars`` when the caller knows the budget the answer was
+    generated under; otherwise the setting is used.
     """
     settings = get_settings()
     timeout_seconds = timeout_seconds or settings.answer_grounding_timeout_seconds
@@ -94,7 +110,7 @@ async def check_faithfulness(
     answer = (answer or "").strip()
     if not answer:
         return FaithfulnessReport(source="fallback", error="empty_answer")
-    context = _context_block(candidates)
+    context = _context_block(candidates, max_chars=max_context_chars)
     if not context:
         return FaithfulnessReport(source="fallback", error="empty_context")
 
