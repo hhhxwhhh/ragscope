@@ -114,6 +114,16 @@ export interface CitationStats {
   citation_rate: number
 }
 
+export interface FaithfulnessReport {
+  claims: { claim: string; supported: boolean; reason: string }[]
+  supported_count: number
+  total: number
+  grounded_ratio: number
+  grounded: boolean
+  error: string | null
+  source: 'llm' | 'fallback'
+}
+
 export interface FeedbackCaseResult {
   dataset_id: string
   dataset_name: string
@@ -269,6 +279,9 @@ export interface ChatMessage {
   citation_stats: CitationStats | null
   rewrite_query: string | null
   prompt_variant: string | null
+  // Faithfulness / grounding report from the LLM judge (null when disabled or the
+  // judge did not run). `grounded` is the flag the UI keys on.
+  faithfulness: FaithfulnessReport | null
   created_at: string
   citations: Citation[]
   trace: RetrievalTrace | null

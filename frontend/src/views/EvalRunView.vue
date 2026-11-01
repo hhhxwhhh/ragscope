@@ -32,6 +32,8 @@ const generationMetricDefs = [
   { key: 'generation_refusal_accuracy', label: '生成拒答准确率' },
   { key: 'generation_false_refusal_rate', label: '生成误拒答率' },
   { key: 'answer_citation_rate', label: '回答引用合规率' },
+  { key: 'faithfulness_ratio', label: '答案事实性（接地率）' },
+  { key: 'faithfulness_grounded_rate', label: '事实性达标率' },
 ]
 
 const latencyDefs = [

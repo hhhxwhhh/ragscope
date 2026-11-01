@@ -32,6 +32,7 @@ from app.models.evaluation import (
     EvalRunStatus,
 )
 from app.models.knowledge_base import KnowledgeBase
+from app.rag import faithfulness as faithfulness_check
 from app.rag.answer import complete_answer
 from app.rag.pipeline import RetrievalConfig, retrieve
 from app.rag.prompt import (
@@ -64,6 +65,8 @@ METRIC_LABELS = {
     "answer_citation_rate": "回答引用合规率",
     "avg_generation_latency_ms": "平均生成耗时",
     "generation_total_tokens": "生成 token 总量",
+    "faithfulness_ratio": "答案事实性（接地率）",
+    "faithfulness_grounded_rate": "事实性达标率",
 }
 TERMINAL_STATUSES = {
     EvalRunStatus.COMPLETED,
@@ -604,6 +607,28 @@ def aggregate_metrics(
         metrics["generation_total_tokens"] = int(
             sum(int(item["metrics"].get("generation_tokens", 0)) for item in generation)
         )
+        # Faithfulness is the LLM-judged factuality metric. Average the grounded
+        # ratio over answered cases whose judge actually ran (source=="llm"); cases
+        # the judge skipped (no key / timeout) are excluded rather than counted as
+        # grounded, so the number reflects real measurements.
+        judged = [
+            item["metrics"]
+            for item in answered
+            if item["metrics"].get("faithfulness_source") == "llm"
+        ]
+        metrics["faithfulness_ratio"] = (
+            round(mean([float(m["faithfulness_ratio"]) for m in judged]), 4)
+            if judged
+            else 0.0
+        )
+        metrics["faithfulness_grounded_rate"] = (
+            round(
+                mean([1.0 if m.get("faithfulness_grounded") else 0.0 for m in judged]),
+                4,
+            )
+            if judged
+            else 0.0
+        )
 
     metrics["elapsed_seconds"] = round(elapsed_seconds, 2)
     return metrics
@@ -739,7 +764,7 @@ async def _generate_case(
     cited = extract_citation_ranks(answer, len(candidates))
     stats = citation_stats(answer, len(candidates), cited)
     refused = looks_refused(answer)
-    return answer, {
+    metrics: dict[str, Any] = {
         "answer_refused": refused,
         "answer_grounded": bool(
             not refused and stats["markers"] > 0 and stats["invalid_markers"] == 0
@@ -750,6 +775,21 @@ async def _generate_case(
         "generation_latency_ms": int((time.perf_counter() - started) * 1000),
         "generation_tokens": int((usage or {}).get("total_tokens", 0)),
     }
+    # LLM factuality / grounding judge. This is the metric that actually catches
+    # hallucinations: a citation marker proves the model *cited* a chunk, not that
+    # the claim in that sentence is true. We add it only when the judge can run;
+    # a missing key or a model error leaves the field absent so aggregation skips
+    # it instead of polluting the average.
+    if not refused and get_settings().deepseek_api_key:
+        try:
+            report = await faithfulness_check.check_faithfulness(answer, candidates)
+            if report.source == "llm":
+                metrics["faithfulness_ratio"] = report.grounded_ratio
+                metrics["faithfulness_grounded"] = report.grounded
+                metrics["faithfulness_source"] = "llm"
+        except Exception as exc:  # noqa: BLE001 - never fail an eval case on the judge
+            logger.warning("eval faithfulness judge failed: %s", exc)
+    return answer, metrics
 
 
 async def execute_run(run_id: UUID) -> None:

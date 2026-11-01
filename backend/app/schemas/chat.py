@@ -118,6 +118,9 @@ class MessageOut(BaseModel):
     citation_stats: dict[str, Any] | None = None
     rewrite_query: str | None
     prompt_variant: str | None = None
+    # Faithfulness / grounding report (rag/faithfulness.py). Null when grounding is
+    # disabled or the judge did not run; "grounded" is the field the UI keys on.
+    faithfulness: dict[str, Any] | None = None
     created_at: datetime
     citations: list[CitationOut] = Field(default_factory=list)
     trace: RetrievalTraceOut | None = None

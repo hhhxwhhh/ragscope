@@ -21,7 +21,7 @@ from app.models.feedback import MessageFeedback
 from app.models.knowledge_base import KnowledgeBase
 from app.models.message import Message, MessageRole, MessageStatus
 from app.models.retrieval_trace import RetrievalTrace
-from app.rag import semantic_cache
+from app.rag import faithfulness, semantic_cache
 from app.rag.answer import complete_answer
 from app.rag.llm import get_chat_model
 from app.rag.pipeline import RetrievalOutcome, retrieve
@@ -475,12 +475,22 @@ async def _save_assistant_message(
 
     citations: list[Citation] = []
     trace_row: RetrievalTrace | None = None
-    if outcome is not None:
+    if outcome is not None and status == MessageStatus.COMPLETED:
         cited_ranks = extract_citation_ranks(content, len(outcome.candidates))
         message.citation_stats = citation_stats(content, len(outcome.candidates), cited_ranks)
         citations = _build_citations(message.id, outcome.candidates, cited_ranks)
         if citations:
             db.add_all(citations)
+        # Faithfulness guard: judge each claim in the answer against the retrieved
+        # context. Runs only when explicitly enabled; it fails open on any error so
+        # it can never block or corrupt the stored answer.
+        settings = get_settings()
+        if settings.answer_grounding_enabled:
+            try:
+                report = await faithfulness.check_faithfulness(content, outcome.candidates)
+                message.faithfulness = report.to_dict()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("answer grounding failed: %s", exc)
         trace = outcome.trace
         trace_row = RetrievalTrace(
             message_id=message.id,

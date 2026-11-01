@@ -72,6 +72,31 @@ PROMPT_VARIANTS: dict[str, PromptVariant] = {
 }
 
 
+FAITHFULNESS_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """你是一个严格的事实核查员。下面给出【回答】和【检索到的上下文】。
+请把【回答】拆分成若干条原子事实声明（claim），对每条声明判断它是否被【上下文】直接支持。
+
+判定标准：
+- supported=true 仅当该声明的事实能在【上下文】中找到明确依据。
+- 上下文未提及、与上下文矛盾、或明显来自模型自身知识的，都算 supported=false。
+- 客套话、过渡句、"根据上下文"这类元叙述不需要单独成条，忽略即可。
+- 拆得越细越好：一句话里若包含两个独立事实，请拆成两条。
+
+只输出一个 JSON 数组，不要输出任何额外文字。每条格式：
+[{{"claim": "声明内容", "supported": true, "reason": "依据：上下文第X段..."}},
+ {{"claim": "声明内容", "supported": false, "reason": "上下文未提及该信息"}}]""",
+        ),
+        (
+            "human",
+            "【上下文】\n{context}\n\n【回答】\n{answer}",
+        ),
+    ]
+)
+
+
 def get_prompt_variant(variant_id: str | None) -> PromptVariant:
     key = (variant_id or DEFAULT_PROMPT_VARIANT).strip()
     variant = PROMPT_VARIANTS.get(key)

@@ -41,4 +41,8 @@ class Message(Base):
     # Which grounded-answer prompt produced this message. Null on user turns and
     # on old rows; the UI treats it as "grounded" when absent.
     prompt_variant: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Faithfulness / grounding report produced by rag/faithfulness.py: whether each
+    # claim in the answer is supported by the retrieved context. Null when grounding
+    # is disabled or the judge did not run.
+    faithfulness: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -1,0 +1,503 @@
+{
+  "name": "Vue Router 官方文档（中文）",
+  "slug": "vue-router-zh",
+  "source": "https://router.vuejs.org/sitemap.xml",
+  "license": "MIT · Vue Router 官方文档，来源 https://router.vuejs.org/zh/",
+  "generated_at": "2026-11-01T03:12:01.299433+00:00",
+  "count": 50,
+  "chars": 132246,
+  "documents": [
+    {
+      "url": "https://router.vuejs.org/zh/api",
+      "title": "API 文档 | Vue Router",
+      "file": "zh__api-32e8da.md",
+      "chars": 7407,
+      "sha256": "9fb467f5ff3919d03a9062bf0f16f6b23517056e6b83f7c33d69d25eae72e76e",
+      "fetched_at": "2026-11-01T03:11:29.857041+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/routelocationmatched",
+      "title": "接口：RouteLocationMatched | Vue Router",
+      "file": "zh__api__interfaces__routelocationmatched-f13152.md",
+      "chars": 2311,
+      "sha256": "5ec84b68bf6f293d4c118e400cee7ac27bec6d4aa04ab30c814a128777e6bebc",
+      "fetched_at": "2026-11-01T03:11:34.199077+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/routelocationoptions",
+      "title": "接口：RouteLocationOptions | Vue Router",
+      "file": "zh__api__interfaces__routelocationoptions-9497a2.md",
+      "chars": 440,
+      "sha256": "ea77c456de610251c6bce924c6428767eb8edea5dd2f7d5fa3c7e209e97a99b9",
+      "fetched_at": "2026-11-01T03:11:34.410392+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/routerecordbase",
+      "title": "Interface: _RouteRecordBase | Vue Router",
+      "file": "zh__api__interfaces__routerecordbase-c953b4.md",
+      "chars": 2278,
+      "sha256": "e244a05d67a376c5b9cbc3d9ff90136f0a04d0e419a9c26dbf07c0d463ebc97d",
+      "fetched_at": "2026-11-01T03:11:35.394843+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/routerecordmultipleviews",
+      "title": "Interface: RouteRecordMultipleViews | Vue Router",
+      "file": "zh__api__interfaces__routerecordmultipleviews-5321df.md",
+      "chars": 2771,
+      "sha256": "5d581a3404d539d1b4a1d4324dd17011d3f4443261e584195c839cd7455fb044",
+      "fetched_at": "2026-11-01T03:11:36.297673+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/routerecordmultipleviewswithchildren",
+      "title": "Interface: RouteRecordMultipleViewsWithChildren | Vue Router",
+      "file": "zh__api__interfaces__routerecordmultipleviewswithchildren-4e35e2.md",
+      "chars": 2857,
+      "sha256": "81edca04f7e65c0ff0b4d663867283cba377e5388b0850d913edaf4fce954c9c",
+      "fetched_at": "2026-11-01T03:11:37.195966+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/routerecordnormalized",
+      "title": "接口：RouteRecordNormalized | Vue Router",
+      "file": "zh__api__interfaces__routerecordnormalized-f93e26.md",
+      "chars": 1303,
+      "sha256": "954439fdc523d0c3f41ae124c25d04afbb76e9fc8febf20a546340971f8166be",
+      "fetched_at": "2026-11-01T03:11:37.839940+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/routerecordredirect",
+      "title": "Interface: RouteRecordRedirect | Vue Router",
+      "file": "zh__api__interfaces__routerecordredirect-fe7494.md",
+      "chars": 2558,
+      "sha256": "4824b34c6b658d05c063529a7fd2e486a01d2b47c185d7155d99381b47527767",
+      "fetched_at": "2026-11-01T03:11:38.313892+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/routerecordsingleview",
+      "title": "Interface: RouteRecordSingleView | Vue Router",
+      "file": "zh__api__interfaces__routerecordsingleview-ef1198.md",
+      "chars": 2576,
+      "sha256": "ecd163c13168b6e548f48f28cebf9416b0679f4b9ec63adc1a73146d8cef62cb",
+      "fetched_at": "2026-11-01T03:11:38.629433+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/routerecordsingleviewwithchildren",
+      "title": "Interface: RouteRecordSingleViewWithChildren | Vue Router",
+      "file": "zh__api__interfaces__routerecordsingleviewwithchildren-44a5f7.md",
+      "chars": 2640,
+      "sha256": "140cb1983f3c3b5fdef82762ce83be4048c47562e2b58ee7978f7c2dbc3618a7",
+      "fetched_at": "2026-11-01T03:11:39.089158+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/routerhistory",
+      "title": "接口：RouterHistory | Vue Router",
+      "file": "zh__api__interfaces__routerhistory-40cbac.md",
+      "chars": 1893,
+      "sha256": "13c16525e8187de4201ec670202cc4b7773438a5b9569d5139d851d77412c899",
+      "fetched_at": "2026-11-01T03:11:39.866444+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/routerlinkprops",
+      "title": "接口：RouterLinkProps | Vue Router",
+      "file": "zh__api__interfaces__routerlinkprops-278093.md",
+      "chars": 801,
+      "sha256": "548bba0482eacc7f62836e886ac666d55d55ad6dfd068d135718a3122f464dbb",
+      "fetched_at": "2026-11-01T03:11:41.049889+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/routeroptions",
+      "title": "接口：RouterOptions | Vue Router",
+      "file": "zh__api__interfaces__routeroptions-613519.md",
+      "chars": 2025,
+      "sha256": "86aa9700b9132595b27ad6ffefa9dc366ca13600f8fe6e4efd1fbb5b2b70913e",
+      "fetched_at": "2026-11-01T03:11:41.273277+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/routerscrollbehavior",
+      "title": "接口：RouterScrollBehavior | Vue Router",
+      "file": "zh__api__interfaces__routerscrollbehavior-cd5dc2.md",
+      "chars": 563,
+      "sha256": "fc3bfff054dbd5a6048d278a3c0e3e92ee29d31b973be68c119a2f0e665bf200",
+      "fetched_at": "2026-11-01T03:11:41.593736+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/file-based-routing/configuration.html",
+      "title": "配置 | Vue Router",
+      "file": "zh__file-based-routing__configuration-8d6475.md",
+      "chars": 1365,
+      "sha256": "13e05af8648e83d7f9a722006db20215cc58d53dc7879eb2bf73a1d557320434",
+      "fetched_at": "2026-11-01T03:11:42.296390+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/file-based-routing/eslint.html",
+      "title": "ESLint | Vue Router",
+      "file": "zh__file-based-routing__eslint-e2f7ed.md",
+      "chars": 399,
+      "sha256": "9f33e9982c959437b11d5d86e1aa611705ff9a5775068ec1cd5ed07707d222d2",
+      "fetched_at": "2026-11-01T03:11:42.796601+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/file-based-routing/extending-routes.html",
+      "title": "扩展路由 | Vue Router",
+      "file": "zh__file-based-routing__extending-routes-13b318.md",
+      "chars": 2673,
+      "sha256": "a626b7d8c2a6b9b68ba57c666b053bef79657c0c2eb57290debabdc65cf8f237",
+      "fetched_at": "2026-11-01T03:11:43.362159+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/file-based-routing/file-based-routing.html",
+      "title": "文件约定 | Vue Router",
+      "file": "zh__file-based-routing__file-based-routing-56d3ba.md",
+      "chars": 5262,
+      "sha256": "2a53c0f745d0d77155305b94a5469674d9a9c871078e8c50d18342431fcf29b2",
+      "fetched_at": "2026-11-01T03:11:43.875532+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/file-based-routing/hmr.html",
+      "title": "热更新 | Vue Router",
+      "file": "zh__file-based-routing__hmr-ce57d5.md",
+      "chars": 1036,
+      "sha256": "234893df47b05acf0f63d7ff24a910a6e4ce15a348a23d1b79e307b19dfca73c",
+      "fetched_at": "2026-11-01T03:11:44.298121+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide/advanced/composition-api.html",
+      "title": "Vue Router 和 组合式 API | Vue Router",
+      "file": "zh__guide__advanced__composition-api-504fc9.md",
+      "chars": 2481,
+      "sha256": "0624a175fd47e4873493e804aedbef625123effe26501f8d7b761b4c01cc8158",
+      "fetched_at": "2026-11-01T03:11:45.306357+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide/advanced/data-fetching.html",
+      "title": "数据获取 | Vue Router",
+      "file": "zh__guide__advanced__data-fetching-6a8eb1.md",
+      "chars": 3144,
+      "sha256": "f41708ab86e6f94ad74b9694ded8154421a5faa0b10e98af60b9109ff42879b7",
+      "fetched_at": "2026-11-01T03:11:45.849200+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/file-based-routing",
+      "title": "入门 | Vue Router",
+      "file": "zh__file-based-routing-bc66a4.md",
+      "chars": 5398,
+      "sha256": "9e99adc118d82b39a288c9128aa627cbd2c4f06c3f3782869d61577548d3e150",
+      "fetched_at": "2026-11-01T03:11:45.993279+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide/advanced/dynamic-routing.html",
+      "title": "动态路由 | Vue Router",
+      "file": "zh__guide__advanced__dynamic-routing-6dfb8e.md",
+      "chars": 2620,
+      "sha256": "a99d4f75b18264e7116aea7aef6bbb47f196875812e1e0f5d82d7298cb5cf6a1",
+      "fetched_at": "2026-11-01T03:11:46.484142+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide/advanced/extending-router-link.html",
+      "title": "扩展 RouterLink | Vue Router",
+      "file": "zh__guide__advanced__extending-router-link-42c91d.md",
+      "chars": 3051,
+      "sha256": "f31977dabb8af8d78b8c4f68e2ea3a21aa4ef773d010865f294ce9556affa165",
+      "fetched_at": "2026-11-01T03:11:46.988890+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide/advanced/lazy-loading.html",
+      "title": "路由懒加载 | Vue Router",
+      "file": "zh__guide__advanced__lazy-loading-38b59b.md",
+      "chars": 1840,
+      "sha256": "cc47bc2fa8d3ba10d7fd305a2388c20fcdb3be12cee8aad1e96fe29ea4ef95c5",
+      "fetched_at": "2026-11-01T03:11:47.472847+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide/advanced/meta.html",
+      "title": "路由元信息 | Vue Router",
+      "file": "zh__guide__advanced__meta-fa50e6.md",
+      "chars": 1677,
+      "sha256": "91fa127402f0712bc43105f966ebbd00631f5e511c4ec202ebd4d720b89f1756",
+      "fetched_at": "2026-11-01T03:11:47.937094+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide/advanced/navigation-failures.html",
+      "title": "等待导航结果 | Vue Router",
+      "file": "zh__guide__advanced__navigation-failures-47f56b.md",
+      "chars": 2647,
+      "sha256": "8f65b43e8561e952c0c96f8de6589103402dc6cf0f07913dd43e0a185263405f",
+      "fetched_at": "2026-11-01T03:11:48.457137+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide/advanced/navigation-guards.html",
+      "title": "导航守卫 | Vue Router",
+      "file": "zh__guide__advanced__navigation-guards-c020d6.md",
+      "chars": 6457,
+      "sha256": "03080f512cd7887bb3585829a0a7cd4ccaf986c9618bfa9f3fc988e198b6d16a",
+      "fetched_at": "2026-11-01T03:11:49.005973+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide/advanced/router-view-slot.html",
+      "title": "RouterView 插槽 | Vue Router",
+      "file": "zh__guide__advanced__router-view-slot-b54e0f.md",
+      "chars": 1501,
+      "sha256": "1bce6e0305ab798b667348f713c07521b8dc6ccdffd6551d3477747f9bcee262",
+      "fetched_at": "2026-11-01T03:11:49.321368+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide/advanced/scroll-behavior.html",
+      "title": "滚动行为 | Vue Router",
+      "file": "zh__guide__advanced__scroll-behavior-fac75c.md",
+      "chars": 2855,
+      "sha256": "d56d1b7b210e77bca828632c0bc6834d223c09d03377f97643f0c831bc4f5cc4",
+      "fetched_at": "2026-11-01T03:11:49.997174+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide/advanced/transitions.html",
+      "title": "过渡动效 | Vue Router",
+      "file": "zh__guide__advanced__transitions-3b4568.md",
+      "chars": 1663,
+      "sha256": "bce5338acf30cfb6a9a7b888365a1ee080efb6079ec7d7f8d81d03d242ab3301",
+      "fetched_at": "2026-11-01T03:11:50.792769+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide/advanced/typed-routes.html",
+      "title": "类型化路由 | Vue Router",
+      "file": "zh__guide__advanced__typed-routes-4a117e.md",
+      "chars": 1541,
+      "sha256": "5bc01de17fe29b5b7a99b26467f3e5c7ee03577aca5ed38274d18aba0347c424",
+      "fetched_at": "2026-11-01T03:11:50.951981+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide/essentials/active-links.html",
+      "title": "匹配当前路由的链接 | Vue Router",
+      "file": "zh__guide__essentials__active-links-c05f29.md",
+      "chars": 1562,
+      "sha256": "634ed8b6cbf11ca482256de1e495d28f63c1499257418a0bd8f1cb2e75afd653",
+      "fetched_at": "2026-11-01T03:11:51.427154+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide/essentials/dynamic-matching.html",
+      "title": "带参数的动态路由匹配 | Vue Router",
+      "file": "zh__guide__essentials__dynamic-matching-e4a37c.md",
+      "chars": 3072,
+      "sha256": "8f6f177a6f72633c4fbaf05066d10b69a4200a2dab8ac403ba678ec6005f1ac3",
+      "fetched_at": "2026-11-01T03:11:52.017700+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide/essentials/named-routes.html",
+      "title": "命名路由 | Vue Router",
+      "file": "zh__guide__essentials__named-routes-a1c0c1.md",
+      "chars": 827,
+      "sha256": "3723df25d2b1bc2ba8d6e7e8832e35b7fd0533a2941f7db28665f0c5fea76ba4",
+      "fetched_at": "2026-11-01T03:11:52.947616+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide/essentials/history-mode.html",
+      "title": "不同的历史模式 | Vue Router",
+      "file": "zh__guide__essentials__history-mode-2d1d79.md",
+      "chars": 4326,
+      "sha256": "60e4bfd08665dc15ebac5a0afb7f11482a6dd097944631529ff7977f2a6572a3",
+      "fetched_at": "2026-11-01T03:11:53.072609+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide/essentials/named-views.html",
+      "title": "命名视图 | Vue Router",
+      "file": "zh__guide__essentials__named-views-09ebcd.md",
+      "chars": 2372,
+      "sha256": "2435f622e3e46acdc9c3843a600474aa8feb76f0bf614ecfa9fc3f3b2f6d619a",
+      "fetched_at": "2026-11-01T03:11:53.430441+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide/essentials/navigation.html",
+      "title": "编程式导航 | Vue Router",
+      "file": "zh__guide__essentials__navigation-d936fc.md",
+      "chars": 3182,
+      "sha256": "45e07a5c4628fed1c5085faea52a2b302ae7d4fdf42cbd775eb293bff2590705",
+      "fetched_at": "2026-11-01T03:11:54.000025+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide/essentials/nested-routes.html",
+      "title": "嵌套路由 | Vue Router",
+      "file": "zh__guide__essentials__nested-routes-e32e84.md",
+      "chars": 3188,
+      "sha256": "86718ab34f754ee50f7a0c4a0011ac44c9bb935543350d7efc02a2e7d56e6064",
+      "fetched_at": "2026-11-01T03:11:54.773063+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide/essentials/passing-props.html",
+      "title": "将 props 传递给路由组件 | Vue Router",
+      "file": "zh__guide__essentials__passing-props-03cd67.md",
+      "chars": 2109,
+      "sha256": "c319f72c60bb0e1bb670bc148e5353aea1d71344721898664f18f362bff2f576",
+      "fetched_at": "2026-11-01T03:11:54.965196+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide/essentials/redirect-and-alias.html",
+      "title": "重定向和别名 | Vue Router",
+      "file": "zh__guide__essentials__redirect-and-alias-ab82fb.md",
+      "chars": 2069,
+      "sha256": "6e11e60e75670eb37323d5721de82930b4d9a4b1ef1ae8b3e6884de9d0176316",
+      "fetched_at": "2026-11-01T03:11:55.736895+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide/essentials/route-matching-syntax.html",
+      "title": "路由的匹配语法 | Vue Router",
+      "file": "zh__guide__essentials__route-matching-syntax-729a27.md",
+      "chars": 2777,
+      "sha256": "b283173f17331c8d6507503e2ca5eaef3d0c2ffe79330c98fbeb59fe290c838f",
+      "fetched_at": "2026-11-01T03:11:55.993768+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide",
+      "title": "入门 | Vue Router",
+      "file": "zh__guide-b77dbe.md",
+      "chars": 4597,
+      "sha256": "32e9eaeece2f7fff8e97817e55812285f00f05a840461f25f7f3e8edb9141602",
+      "fetched_at": "2026-11-01T03:11:56.847028+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/installation.html",
+      "title": "安装 | Vue Router",
+      "file": "zh__installation-136790.md",
+      "chars": 2120,
+      "sha256": "70ad138add4e3d9345c55d1bbc5e98203815b307df44e616dc96bfb76dcab278",
+      "fetched_at": "2026-11-01T03:11:57.465501+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/guide/migration",
+      "title": "从 Vue2 迁移 | Vue Router",
+      "file": "zh__guide__migration-fb0fdf.md",
+      "chars": 11242,
+      "sha256": "2c88840af65ba3086e3ab6e96d73f27117f5dff09c8c1fca0a0a0c53a972d6a7",
+      "fetched_at": "2026-11-01T03:11:57.772480+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/about-translation.html",
+      "title": "关于中文翻译 | Vue Router",
+      "file": "zh__about-translation-ccdf30.md",
+      "chars": 1039,
+      "sha256": "3cb017abbdaa4c84b11f17bb01fbd55dc28ef33ed2059b9054ebf83f0edcfb29",
+      "fetched_at": "2026-11-01T03:11:58.640613+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/routelocation",
+      "title": "接口：RouteLocation | Vue Router",
+      "file": "zh__api__interfaces__routelocation-bbaee1.md",
+      "chars": 1106,
+      "sha256": "6e5dfddfcb6cf49c1ff1eac846d4cc061eb8e1c227d5882cf3d599b73b969213",
+      "fetched_at": "2026-11-01T03:11:59.750785+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/routelocationnormalized",
+      "title": "接口：RouteLocationNormalized | Vue Router",
+      "file": "zh__api__interfaces__routelocationnormalized-11e5e6.md",
+      "chars": 1152,
+      "sha256": "11079dc8516a35cea726183891bad83714012115f6fc5a6b0cf39e3023b97e07",
+      "fetched_at": "2026-11-01T03:12:00.350786+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/routelocationnormalizedloaded",
+      "title": "接口：RouteLocationNormalizedLoaded | Vue Router",
+      "file": "zh__api__interfaces__routelocationnormalizedloaded-600a37.md",
+      "chars": 1200,
+      "sha256": "63179ebb4b84fc66f50841bd275773aee72ba5213f8346ca9805ff8ed5e3d263",
+      "fetched_at": "2026-11-01T03:12:01.146124+00:00",
+      "depth": 0
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/router",
+      "title": "接口：Router | Vue Router",
+      "file": "zh__api__interfaces__router-89afbf.md",
+      "chars": 4273,
+      "sha256": "ccc5842d5907ea872793c49b6c16da58f0602a2023195b4350a30e7ff2337d63",
+      "fetched_at": "2026-11-01T03:12:01.299433+00:00",
+      "depth": 0
+    }
+  ],
+  "errors": [
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/NavigationGuardNext.html",
+      "error": "正文过短，跳过"
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/NavigationGuardWithThis.html",
+      "error": "正文过短，跳过"
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/HistoryState.html",
+      "error": "正文过短，跳过"
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/NavigationGuard.html",
+      "error": "正文过短，跳过"
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/NavigationFailure.html",
+      "error": "正文过短，跳过"
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/NavigationHookAfter.html",
+      "error": "正文过短，跳过"
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/RouteMeta.html",
+      "error": "正文过短，跳过"
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/interfaces/RouterViewProps.html",
+      "error": "正文过短，跳过"
+    },
+    {
+      "url": "https://router.vuejs.org/zh/introduction.html",
+      "error": "正文过短，跳过"
+    },
+    {
+      "url": "https://router.vuejs.org/zh/api/enums/NavigationFailureType.html",
+      "error": "正文过短，跳过"
+    }
+  ]
+}

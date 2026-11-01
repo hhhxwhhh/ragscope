@@ -320,6 +320,7 @@ function makeLocalMessage(role: 'user' | 'assistant', content: string): ChatMess
     citation_stats: null,
     rewrite_query: null,
     prompt_variant: role === 'assistant' ? promptVariant.value : null,
+    faithfulness: null,
     created_at: new Date().toISOString(),
     citations: [],
     trace: null,
@@ -569,6 +570,21 @@ function citationSummary(message: ChatMessage): string {
     parts.push(`越界标记 ${stats.invalid_markers}`)
   }
   return parts.join(' · ')
+}
+
+// Faithfulness / grounding badge. Only shown when the LLM judge actually ran
+// (source === "llm"); a fallback report (missing key / timeout) is intentionally
+// silent so we never alarm the user over a judge that couldn't speak.
+function faithfulnessBadge(message: ChatMessage): { text: string; type: 'success' | 'warning' } | null {
+  const f = message.faithfulness
+  if (!f || f.source !== 'llm') {
+    return null
+  }
+  const pct = Math.round((f.grounded_ratio || 0) * 100)
+  if (f.grounded) {
+    return { text: `事实性 ${pct}%`, type: 'success' }
+  }
+  return { text: `疑似未接地 ${pct}%`, type: 'warning' }
 }
 
 function feedbackReasonLabel(value: string | null): string {
@@ -847,6 +863,30 @@ onMounted(async () => {
               >
                 {{ citationSummary(message) }}
               </span>
+              <el-tooltip
+                v-if="faithfulnessBadge(message) && message.faithfulness?.claims?.length"
+                placement="top"
+                :show-after="200"
+              >
+                <template #content>
+                  <div class="faith-tip">
+                    <div
+                      v-for="(c, i) in message.faithfulness!.claims"
+                      :key="i"
+                      :class="c.supported ? 'ok' : 'bad'"
+                    >
+                      {{ c.supported ? '✓' : '✗' }} {{ c.claim }}
+                    </div>
+                  </div>
+                </template>
+                <el-tag
+                  size="small"
+                  :type="faithfulnessBadge(message)!.type"
+                  effect="light"
+                >
+                  {{ faithfulnessBadge(message)!.text }}
+                </el-tag>
+              </el-tooltip>
               <template v-if="canRate(message)">
                 <el-button
                   text
@@ -1119,6 +1159,19 @@ onMounted(async () => {
   border-radius: 8px;
   background: #f8fafc;
   border: 1px dashed #cbd5e1;
+}
+
+.faith-tip {
+  max-width: 320px;
+  line-height: 1.6;
+}
+
+.faith-tip .ok {
+  color: #b7e4c7;
+}
+
+.faith-tip .bad {
+  color: #ffc9c9;
 }
 
 .deep-plan-title {

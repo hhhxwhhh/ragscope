@@ -121,6 +121,16 @@ class Settings(BaseSettings):
     compress_timeout_seconds: float = 6.0
     compress_min_chars: int = 160
 
+    # Answer grounding: after an answer is generated, judge each claim against the
+    # retrieved context and flag hallucinations. Off by default because it is an
+    # extra LLM call per answer; enable it for high-stakes knowledge bases.
+    answer_grounding_enabled: bool = False
+    # A hard floor: below this grounded ratio the report is marked ungrounded and
+    # the UI shows a warning. Only applies when the judge itself ran (source=llm),
+    # so a broken judge never falsely flags a good answer.
+    answer_grounding_threshold: float = 0.5
+    answer_grounding_timeout_seconds: float = 8.0
+
     # Chat
     llm_timeout_seconds: float = 60.0
     max_answer_tokens: int = 1024
